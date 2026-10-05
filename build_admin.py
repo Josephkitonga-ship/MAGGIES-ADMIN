@@ -76,7 +76,7 @@ ADMIN_SHELL = """<!doctype html>
     <p class="admin-msg" id="resetMsg"></p>
     <button class="btn btn--solid btn--wide" type="submit">Save new password</button>
   </form>
-  <p class="gate__links"><a href="index.html">Staff sign in</a> · <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+  <p class="gate__links"><a href="request.html">Request access</a> · <a href="index.html">Staff sign in</a> · <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
   <button class="icon-btn gate__theme" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
 </section>
 

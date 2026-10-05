@@ -309,7 +309,9 @@
       password: $("#password").value
     });
     if (error) {
-      note("#gateMsg", "That email and password did not match. Try again.", false);
+      note("#gateMsg", /not confirmed/i.test(error.message || "")
+        ? "Please confirm your email first. Open the link we sent you (check spam too), then sign in."
+        : "That email and password did not match. Try again, or use Forgot password. New here? Request access below.", false);
       return;
     }
     $("#gateMsg").textContent = "";
