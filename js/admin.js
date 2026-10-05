@@ -115,9 +115,43 @@
     return '<span class="badge badge--' + esc(s.slug) + '">' + esc(s.short) + "</span>";
   }
 
+  const DEPTS = SHOP.departments;
+
+  function deptName(slug) {
+    const d = DEPTS.find((x) => x.slug === slug);
+    return d ? d.name : (slug || "Other");
+  }
+
+  /* type slugs are shared between Women, Men and Kids & teens */
   function categoryName(slug) {
-    const c = SHOP.categories.find((x) => x.slug === slug);
-    return c ? c.name : (slug || "Other");
+    for (const d of DEPTS) {
+      const t = d.types.find((x) => x.slug === slug);
+      if (t) return t.name;
+    }
+    return slug || "Other";
+  }
+
+  /* "Women · Dresses" for any product, including older ones with no department */
+  function placeLabel(p) {
+    const placed = ORD.placeProduct(p, DEPTS);
+    return deptName(placed.department) + " · " + categoryName(placed.type);
+  }
+
+  /* what sizes usually go with each department */
+  const SIZE_HINTS = {
+    women: "Letters (XS\u20135XL), or One size.",
+    men: "Letters (XS\u20135XL), or numbers (28\u201346) for trousers.",
+    kids: "By age: 2-3Y, 4-5Y, 6-7Y, 8-9Y, 10-11Y, 12-13Y, 14-15Y.",
+    shoes: "EU numbers, for example 36, 37, 38 \u2026 45.",
+    bags: "Small, Medium, Large, or Suitcase for travel cases.",
+    accessories: "One size, unless it comes in sizes."
+  };
+
+  function fillTypes(selected) {
+    const dep = DEPTS.find((d) => d.slug === $("#pDepartment").value) || DEPTS[0];
+    $("#pCategory").innerHTML = dep.types.map((t) => `<option value="${t.slug}">${esc(t.name)}</option>`).join("");
+    if (selected && dep.types.some((t) => t.slug === selected)) $("#pCategory").value = selected;
+    $("#pSizesHint").textContent = SIZE_HINTS[dep.slug] || "";
   }
 
   function note(target, text, good) {
@@ -487,7 +521,7 @@
   function renderProducts() {
     const q = ui.prodQuery.trim().toLowerCase();
     const rows = scoped(PRODUCTS).filter((p) =>
-      !q || (p.name + " " + categoryName(p.category)).toLowerCase().indexOf(q) !== -1);
+      !q || (p.name + " " + placeLabel(p)).toLowerCase().indexOf(q) !== -1);
     const list = $("#productList");
 
     if (!rows.length) {
@@ -506,7 +540,7 @@
             <div class="row__title">${esc(p.name)} ${IS_OWNER ? badge(p.store) : ""}${pct ? `<span class="badge badge--off">−${pct}%</span>` : ""}</div>
             <div class="row__meta">
               <span class="row__price">${money(p.price)}${pct ? `<s>${money(p.compare_price)}</s>` : ""}</span> ·
-              ${esc(categoryName(p.category))} ·
+              ${esc(placeLabel(p))} ·
               ${Array.isArray(p.sizes) && p.sizes.length ? esc(p.sizes.join(", ")) : "no sizes"} ·
               <span class="pill${p.active ? " pill--new" : ""}">${p.active ? "on the rail" : "hidden"}</span>
             </div>
@@ -532,7 +566,9 @@
     $("#pName").value = product ? product.name : "";
     $("#pPrice").value = product ? product.price : "";
     $("#pCompare").value = product && product.compare_price ? product.compare_price : "";
-    $("#pCategory").value = product ? product.category : SHOP.categories[0].slug;
+    const placed = product ? ORD.placeProduct(product, DEPTS) : { department: DEPTS[0].slug, type: "" };
+    $("#pDepartment").value = placed.department;
+    fillTypes(placed.type);
     $("#pDescription").value = product ? (product.description || "") : "";
     $("#pMaterial").value = product ? (product.material || "") : "";
     $("#pDimensions").value = product ? (product.dimensions || "") : "";
@@ -631,6 +667,7 @@
       name: name,
       price: price,
       compare_price: compare || null,
+      department: $("#pDepartment").value,
       category: $("#pCategory").value,
       description: $("#pDescription").value.trim(),
       image_url: imageUrl,
@@ -720,6 +757,7 @@
           ${CAN_EDIT ? `<select class="mini" data-status="${esc(o.id)}" aria-label="Order status">
             ${STATUSES.map((s) => `<option value="${s}"${s === o.status ? " selected" : ""}>${s}</option>`).join("")}
           </select>` : ""}
+          ${CAN_EDIT && o.status === "cancelled" ? `<button class="mini mini--danger" type="button" data-delete-order="${esc(o.id)}">Delete</button>` : ""}
           ${CAN_EDIT && ORD.waPhone(o.customer_phone).length >= 11 ? `<a class="mini" href="${esc(wa)}" target="_blank" rel="noopener">Message customer</a>` : ""}
         </div>
       </article>`;
@@ -763,6 +801,21 @@
     renderAll();
     flash(message);
     return true;
+  }
+
+  /* Only cancelled orders can be deleted (the database enforces this too),
+     so a real sale can never be wiped by a mis-tap. To remove a test order,
+     set it to "cancelled" first. */
+  async function deleteOrder(id) {
+    if (!CAN_EDIT) return;
+    const row = ORDERS.find((o) => String(o.id) === String(id));
+    if (!row || row.status !== "cancelled") { flash("Set the order to cancelled first.", true); return; }
+    if (!window.confirm("Delete order " + (row.code || "") + " for good? This cannot be undone.")) return;
+    const { error } = await sb.from("orders").delete().eq("id", id);
+    if (error) { flash("Could not delete: " + error.message, true); return; }
+    ORDERS = ORDERS.filter((o) => String(o.id) !== String(id));
+    renderAll();
+    flash("Order deleted");
   }
 
   function setVerified(id, on) {
@@ -836,11 +889,11 @@
         cls: showStore ? r.store : ""
       })));
 
-    /* categories */
-    const catOf = new Map(PRODUCTS.map((p) => [String(p.id), p.category]));
+    /* departments */
+    const deptOf = new Map(PRODUCTS.map((p) => [String(p.id), ORD.placeProduct(p, DEPTS).department]));
     const byCat = new Map();
     sold.forEach((o) => itemsOf(o).forEach((i) => {
-      const name = categoryName(catOf.get(String(i.id)) || "");
+      const name = deptName(deptOf.get(String(i.id)) || "");
       byCat.set(name, (byCat.get(name) || 0) + (Number(i.price) || 0) * (Number(i.qty) || 0));
     }));
     $("#stCats").innerHTML = hbars(
@@ -866,7 +919,8 @@
   }
 
   function fillSelects() {
-    $("#pCategory").innerHTML = SHOP.categories.map((c) => `<option value="${c.slug}">${c.name}</option>`).join("");
+    $("#pDepartment").innerHTML = DEPTS.map((d) => `<option value="${d.slug}">${esc(d.name)}</option>`).join("");
+    fillTypes();
     $("#pStore").innerHTML = STORES.map((s) => `<option value="${s.slug}">${esc(s.name)}</option>`).join("");
     $("#orderStatus").innerHTML = ['<option value="all">Any status</option>']
       .concat(STATUSES.map((s) => `<option value="${s}">${s}</option>`)).join("");
@@ -903,6 +957,8 @@
       if (nav) { setPane(nav.dataset.pane); return; }
       const go = event.target.closest("[data-goto]");
       if (go) { setPane(go.dataset.goto); return; }
+      const delOrder = event.target.closest("[data-delete-order]");
+      if (delOrder) { deleteOrder(delOrder.dataset.deleteOrder); return; }
       const verify = event.target.closest("[data-verify]");
       if (verify) { setVerified(verify.dataset.verify, true); return; }
       const undo = event.target.closest("[data-unverify]");
@@ -929,6 +985,7 @@
     $("#sheetScrim").addEventListener("click", closeSheet);
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSheet(); });
     $("#productForm").addEventListener("submit", saveProduct);
+    $("#pDepartment").addEventListener("change", () => fillTypes());
     $("#pPrice").addEventListener("input", previewOffer);
     $("#pCompare").addEventListener("input", previewOffer);
     $("#pImageFile").addEventListener("change", function () {

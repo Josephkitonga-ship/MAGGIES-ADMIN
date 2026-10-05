@@ -19,12 +19,12 @@ robots.txt     asks search engines to stay out; pages also carry noindex
 Enforced by the database (see the shop repository's `docs/` SQL files), not just by these pages.
 
 ## Going live (GitHub Pages)
-1. New repository `MAGGIE-S-ADMIN` on GitHub, upload these files, then Settings > Pages > deploy from `main`, root.
-2. Address: `https://<your-username>.github.io/MAGGIE-S-ADMIN/`
+1. New repository `MAGGIES-ADMIN` on GitHub, upload these files, then Settings > Pages > deploy from `main`, root.
+2. Address: `https://<your-username>.github.io/MAGGIES-ADMIN/`
 
 ## Forgot password
 In Supabase: Authentication > URL Configuration > Redirect URLs > add
-`https://<your-username>.github.io/MAGGIE-S-ADMIN/**` and save.
+`https://<your-username>.github.io/MAGGIES-ADMIN/**` and save.
 Supabase's built-in email is limited to a few messages an hour, plenty for three staff.
 
 ## When the shop gets a domain
@@ -33,5 +33,5 @@ Supabase's built-in email is limited to a few messages an hour, plenty for three
   CNAME record at `<your-username>.github.io`, then add the new address to the Supabase Redirect URLs.
 
 ## Keeping in step with the shop
-`js/config.js` here holds the two boutique names and the categories. If you change them in the shop's
-config, change them here too. Never rename a boutique `slug`.
+`js/config.js` here holds the two boutique names and the departments and types. If you change them in the shop's
+config, change them here too (`SHOP.departments`). Never rename a boutique `slug`.

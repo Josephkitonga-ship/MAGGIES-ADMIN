@@ -162,7 +162,7 @@ ADMIN_SHELL = """<!doctype html>
         </div>
         <div class="two-up">
           <div class="panel"><div class="panel__head"><h2>Best sellers</h2></div><div id="stTop"></div></div>
-          <div class="panel"><div class="panel__head"><h2>Sales by category</h2></div><div id="stCats"></div></div>
+          <div class="panel"><div class="panel__head"><h2>Sales by department</h2></div><div id="stCats"></div></div>
         </div>
       </section>
     </main>
@@ -189,9 +189,10 @@ ADMIN_SHELL = """<!doctype html>
     </div>
     <p class="offer-preview" id="pOffer">Add a marked price higher than the selling price to show a discount badge.</p>
     <div class="two-col">
-      <label class="field"><span>Category</span><select id="pCategory"></select></label>
-      <label class="field"><span>Sort order, lower shows first</span><input id="pSort" type="number" value="0"></label>
+      <label class="field"><span>Department</span><select id="pDepartment"></select></label>
+      <label class="field"><span>Type</span><select id="pCategory"></select></label>
     </div>
+    <label class="field"><span>Sort order, lower shows first</span><input id="pSort" type="number" value="0"></label>
     <label class="field"><span>One line about it</span><input id="pDescription" type="text"></label>
     <div class="two-col">
       <label class="field"><span>Material</span><input id="pMaterial" type="text" placeholder="e.g. Cotton blend"></label>
@@ -223,7 +224,7 @@ ADMIN_SHELL = """<!doctype html>
       <span>Sizes, separated by commas</span>
       <input id="pSizes" type="text" placeholder="S, M, L, XL">
     </label>
-    <p class="hint">Letters (XS&ndash;5XL) for most items · numbers (28&ndash;46) for men's trousers · 2-3Y, 4-5Y &hellip; 14-15Y for kids · Small, Medium, Large, Suitcase for bags</p>
+    <p class="hint" id="pSizesHint">Letters (XS&ndash;5XL) for most items.</p>
     <label class="check"><input id="pActive" type="checkbox" checked><span>Show on the rail</span></label>
     <div class="sheet__acts">
       <button class="btn btn--solid" id="saveProduct" type="submit">Add product</button>

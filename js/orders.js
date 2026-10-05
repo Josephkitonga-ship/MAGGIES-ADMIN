@@ -76,6 +76,38 @@
       " — " + fmt(Number(line.price) * Number(line.qty));
   }
 
+  /* Old category slugs (before departments) and where they now belong.
+     Used for old links such as ?c=menswear and for old product rows. */
+  const LEGACY = {
+    dresses: ["women", "dresses"],
+    tops: ["women", "tops"],
+    bottoms: ["women", "trousers"],
+    menswear: ["men", "tops"],
+    kids: ["kids", "tops"],
+    ankara: ["women", "african"],
+    bags: ["bags", "handbags"],
+    shoes: ["shoes", "sandals"],
+    accessories: ["accessories", "jewellery"]
+  };
+
+  /* Where a product sits: { department, type }.
+     A product with a valid department keeps it. An older product with
+     no department is placed from its old category. */
+  function placeProduct(product, departments) {
+    const dep = departments.find(function (d) { return d.slug === product.department; });
+    if (dep) return { department: dep.slug, type: product.category };
+    const old = LEGACY[product.category];
+    if (old) return { department: old[0], type: old[1] };
+    return { department: departments[0].slug, type: product.category };
+  }
+
+  /* Added in the last `days` days (default 14): the New arrivals filter. */
+  function isFresh(product, now, days) {
+    const born = product.created_at ? new Date(product.created_at).getTime() : NaN;
+    if (isNaN(born)) return false;
+    return (now || new Date()).getTime() - born <= (days || 14) * 86400000;
+  }
+
   /* groups: [{ store, code, lines, subtotal }]
      details: { name, phone, location, notes, zone, fee, total }
      fmt: money formatter.
@@ -172,6 +204,9 @@
     buildMessage: buildMessage,
     buildItemMessage: buildItemMessage,
     highlights: highlights,
+    LEGACY: LEGACY,
+    placeProduct: placeProduct,
+    isFresh: isFresh,
     waPhone: waPhone
   };
 });
