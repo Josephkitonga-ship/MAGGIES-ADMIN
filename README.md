@@ -5,6 +5,7 @@ Same Supabase project as the shop, so products, orders and the three logins carr
 
 ```
 index.html     chooser: which desk?
+request.html   request access (owner approves in the Staff tab)
 maggie.html    Maggie's Collection desk
 david.html     David's Boutique desk
 owner.html     owner desk (both boutiques, view only)
@@ -17,6 +18,14 @@ robots.txt     asks search engines to stay out; pages also carry noindex
 - Maggie and David: their own desk only (products, orders, verify, own sales).
 - Owner: `owner.html` only, view only (sales, discounts, both boutiques).
 Enforced by the database (see the shop repository's `docs/` SQL files), not just by these pages.
+
+## Staff access (owner approves)
+1. A new person opens `request.html` (the "Request access" link on the sign-in page), enters their email and a password, and confirms the email link.
+2. Until approved they can see and change **nothing** (enforced by the database).
+3. The owner opens the **Staff** tab on the owner desk, sees who is waiting, picks Maggie's or David's, and taps **Approve**.
+4. The owner can also move someone to the other store, remove their access, or send a password reset link.
+Needs `docs/supabase-staff-approval.sql` (in the shop repository) run once in Supabase.
+Owner accounts are still created in SQL only; this tool only makes store admins.
 
 ## Going live (GitHub Pages)
 1. New repository `MAGGIES-ADMIN` on GitHub, upload these files, then Settings > Pages > deploy from `main`, root.

@@ -15,25 +15,30 @@ Set SHOP_URL below to the live shop address. When the shop gets its own
 domain, change that one line and rebuild.
 """
 
+import json
 import os
+import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # where "Back to the shop" points
 SHOP_URL = "https://josephkitonga-ship.github.io/MAGGIE-S-COLLECTION/"
 
+# changes every build, so phones fetch fresh scripts instead of an old cached copy
+VERSION = time.strftime("%Y%m%d%H%M")
+
 SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
 
 THEME_BOOT = '<script>(function(){try{var t=localStorage.getItem("maggies_theme");if(!t){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>'
 
-DESKS = [{'file': 'maggie.html', 'store': 'maggies', 'title': "Maggie's desk", 'name': "Maggie's Collection", 'kind': 'Store desk', 'gate_title': "Maggie's Collection desk", 'gate_text': "Sign in to add products, verify orders and see Maggie's sales."}, {'file': 'david.html', 'store': 'davids', 'title': "David's desk", 'name': "David's Boutique", 'kind': 'Store desk', 'gate_title': "David's Boutique desk", 'gate_text': "Sign in to add products, verify orders and see David's sales."}, {'file': 'owner.html', 'store': 'owner', 'title': 'Owner desk', 'name': 'Owner desk', 'kind': 'Both boutiques · view only', 'gate_title': 'Owner desk', 'gate_text': 'Sign in to see sales, discounts and orders for both boutiques. This desk is view only.'}]
+DESKS = [{'file': 'maggie.html', 'store': 'maggies', 'title': 'Staff sign in', 'name': "Maggie's Collection", 'kind': 'Store desk', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}, {'file': 'david.html', 'store': 'davids', 'title': 'Staff sign in', 'name': "David's Boutique", 'kind': 'Store desk', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}, {'file': 'owner.html', 'store': 'owner', 'title': 'Staff sign in', 'name': 'Owner desk', 'kind': 'Both boutiques · view only', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}]
 
 ADMIN_SHELL = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>{{DESK_TITLE}} — Maggie's Collection</title>
+<title>Staff sign in</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
@@ -41,9 +46,9 @@ ADMIN_SHELL = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
-<link rel="stylesheet" href="css/stores.css">
-<link rel="stylesheet" href="css/admin.css">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
 </head>
 <body class="admin" data-store="{{STORE}}">
 
@@ -71,16 +76,63 @@ ADMIN_SHELL = """<!doctype html>
     <p class="admin-msg" id="resetMsg"></p>
     <button class="btn btn--solid btn--wide" type="submit">Save new password</button>
   </form>
-  <p class="gate__links"><a href="index.html">Other staff desks</a> · <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+  <p class="gate__links"><a href="index.html">Staff sign in</a> · <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
   <button class="icon-btn gate__theme" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
 </section>
 
-<div class="desk" id="desk" hidden>
+
+<script src="{{SUPABASE_CDN}}"></script>
+<script src="js/theme.js?v={{VERSION}}"></script>
+<script src="js/config.js?v={{VERSION}}"></script>
+<script src="js/orders.js?v={{VERSION}}"></script>
+<script src="js/desk.js?v={{VERSION}}"></script>
+<script src="js/admin.js?v={{VERSION}}"></script>
+</body>
+</html>
+"""
+
+REQUEST_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Request access</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
+{{THEME_BOOT}}
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
+</head>
+<body class="admin">
+<section class="gate">
+  <h1>Request access</h1>
+  <p>Enter your email and choose a password. We will email you a link to confirm it. Then the owner approves you.</p>
+  <form id="requestForm" novalidate>
+    <label class="field"><span>Email</span><input id="reqEmail" type="email" autocomplete="username" required></label>
+    <label class="field"><span>Choose a password (8 or more characters)</span><input id="reqPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>Repeat the password</span><input id="reqPassword2" type="password" autocomplete="new-password" minlength="8" required></label>
+    <p class="admin-msg" id="reqMsg"></p>
+    <button class="btn btn--solid btn--wide" type="submit">Request access</button>
+  </form>
+  <p class="gate__links"><a href="index.html">Staff sign in</a> &middot; <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+</section>
+<script src="{{SUPABASE_CDN}}"></script>
+<script src="js/theme.js?v={{VERSION}}"></script>
+<script src="js/config.js?v={{VERSION}}"></script>
+<script src="js/request.js?v={{VERSION}}"></script>
+</body>
+</html>
+"""
+
+DESK_HTML = """<div class="desk" id="desk" hidden>
 
   <aside class="side">
     <div class="side__brand">
       <span class="side__logo" aria-hidden="true"></span>
-      <div><b id="deskName">{{DESK_NAME}}</b><small id="deskKind">{{DESK_KIND}}</small></div>
+      <div><b id="deskName"></b><small id="deskKind"></small></div>
     </div>
     <nav class="side__nav" id="sideNav" aria-label="Desk sections"></nav>
     <div class="side__foot">
@@ -165,6 +217,21 @@ ADMIN_SHELL = """<!doctype html>
           <div class="panel"><div class="panel__head"><h2>Sales by department</h2></div><div id="stCats"></div></div>
         </div>
       </section>
+
+      <section class="pane" id="pane-staff">
+        <p class="admin-msg" id="staffMsg"></p>
+        <div class="panel">
+          <div class="panel__head">
+            <h2>Waiting for approval</h2>
+            <p class="hint">People who asked for access. They see nothing until you approve them.</p>
+          </div>
+          <div id="staffPending"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head"><h2>Staff</h2></div>
+          <div id="staffActive"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -234,14 +301,6 @@ ADMIN_SHELL = """<!doctype html>
 </aside>
 <div class="sheet-scrim" id="sheetScrim" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-<script src="{{SUPABASE_CDN}}"></script>
-<script src="js/theme.js"></script>
-<script src="js/config.js"></script>
-<script src="js/orders.js"></script>
-<script src="js/admin.js"></script>
-</body>
-</html>
 """
 
 ADMIN_CHOOSER = """<!doctype html>
@@ -249,27 +308,27 @@ ADMIN_CHOOSER = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Staff sign in — Maggie's Collection</title>
+<title>Staff sign in</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
 {{THEME_BOOT}}
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
-<link rel="stylesheet" href="css/stores.css">
-<link rel="stylesheet" href="css/admin.css">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
 </head>
 <body class="admin">
 <section class="gate gate--wide">
   <h1>Staff sign in</h1>
-  <p>Choose your desk. Each one has its own sign in, and you only see what belongs to you.</p>
+  <p>Choose where you are signing in.</p>
   <div class="doors">
-    <a class="door door--maggies" href="maggie.html"><b>Maggie's Collection</b><span>Products, orders and sales for Maggie's</span></a>
-    <a class="door door--davids" href="david.html"><b>David's Boutique</b><span>Products, orders and sales for David's</span></a>
-    <a class="door door--owner" href="owner.html"><b>Owner</b><span>Sales, discounts and orders for both boutiques, view only</span></a>
+    <a class="door door--maggies" href="maggie.html"><b>Maggie's Collection</b></a>
+    <a class="door door--davids" href="david.html"><b>David's Boutique</b></a>
+    <a class="door door--owner" href="owner.html"><b>Owner</b></a>
   </div>
-  <p class="gate__links"><a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
-  <script src="js/theme.js"></script>
+  <p class="gate__links"><a href="request.html">Request access</a> &middot; <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+  <script src="js/theme.js?v={{VERSION}}"></script>
 </section>
 </body>
 </html>
@@ -288,6 +347,7 @@ def render_desk(desk):
         ("{{STORE}}", desk["store"]),
         ("{{SUPABASE_CDN}}", SUPABASE_CDN),
         ("{{SHOP_URL}}", SHOP_URL),
+        ("{{VERSION}}", VERSION),
     ):
         html = html.replace(key, value)
     return html
@@ -301,8 +361,14 @@ def write(path, text):
 
 
 def main():
-    chooser = ADMIN_CHOOSER.replace("{{THEME_BOOT}}", THEME_BOOT).replace("{{SHOP_URL}}", SHOP_URL)
+    chooser = (ADMIN_CHOOSER.replace("{{THEME_BOOT}}", THEME_BOOT)
+               .replace("{{SHOP_URL}}", SHOP_URL).replace("{{VERSION}}", VERSION))
     write("index.html", chooser)
+    request = (REQUEST_PAGE.replace("{{THEME_BOOT}}", THEME_BOOT).replace("{{SHOP_URL}}", SHOP_URL)
+               .replace("{{SUPABASE_CDN}}", SUPABASE_CDN).replace("{{VERSION}}", VERSION))
+    write("request.html", request)
+    # the dashboard is not in any page: it is loaded into the page only after a successful sign in
+    write("js/desk.js", "window.MC_DESK_HTML = " + json.dumps(DESK_HTML.replace("{{SHOP_URL}}", SHOP_URL), ensure_ascii=False) + ";\n")
     for desk in DESKS:
         write(desk["file"], render_desk(desk))
     print("done")

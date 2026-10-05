@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Request access</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
+<script>(function(){try{var t=localStorage.getItem("maggies_theme");if(!t){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=202610050915">
+<link rel="stylesheet" href="css/stores.css?v=202610050915">
+<link rel="stylesheet" href="css/admin.css?v=202610050915">
+</head>
+<body class="admin">
+<section class="gate">
+  <h1>Request access</h1>
+  <p>Enter your email and choose a password. We will email you a link to confirm it. Then the owner approves you.</p>
+  <form id="requestForm" novalidate>
+    <label class="field"><span>Email</span><input id="reqEmail" type="email" autocomplete="username" required></label>
+    <label class="field"><span>Choose a password (8 or more characters)</span><input id="reqPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>Repeat the password</span><input id="reqPassword2" type="password" autocomplete="new-password" minlength="8" required></label>
+    <p class="admin-msg" id="reqMsg"></p>
+    <button class="btn btn--solid btn--wide" type="submit">Request access</button>
+  </form>
+  <p class="gate__links"><a href="index.html">Staff sign in</a> &middot; <a href="https://josephkitonga-ship.github.io/MAGGIE-S-COLLECTION/">&larr; Back to the shop</a></p>
+</section>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/theme.js?v=202610050915"></script>
+<script src="js/config.js?v=202610050915"></script>
+<script src="js/request.js?v=202610050915"></script>
+</body>
+</html>

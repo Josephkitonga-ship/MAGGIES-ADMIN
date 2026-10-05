@@ -61,18 +61,23 @@
   const svg = (inner) =>
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + "</svg>";
 
-  const PANES = [
+  const PANES_BASE = [
     { id: "overview", label: "Overview", title: "Overview", icon: svg('<rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/>') },
     { id: "products", label: "Products", title: "Products", icon: svg('<path d="M3.5 12.5v-8h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.2"/>') },
     { id: "orders", label: "Orders", title: "Orders", icon: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>') },
     { id: "stats", label: "Stats", title: "Sales and discounts", icon: svg('<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>') }
   ];
 
+  const PANES = PANES_BASE.concat(IS_OWNER ? [
+    { id: "staff", label: "Staff", title: "Staff access", icon: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11v6M14 14h6"/>') }
+  ] : []);
+
   /* --- state ------------------------------------------------------ */
 
   let me = null;               // { email, role, store }
   let PRODUCTS = [];
   let ORDERS = [];
+  let STAFF = [];   // everyone with a login, from list_staff_accounts() (owner only)
   let editingId = null;
   let editingImageUrl = "";
   let editingGallery = [];
@@ -215,7 +220,8 @@
 
   function showGate(message) {
     $("#gate").hidden = false;
-    $("#desk").hidden = true;
+    const desk = $("#desk");
+    if (desk) desk.hidden = true;
     if (message) note("#gateMsg", message, false);
   }
 
@@ -225,7 +231,7 @@
 
     if (error || !staff) {
       await sb.auth.signOut();
-      showGate("This account is not on the staff list yet. Ask the owner to add it.");
+      showGate("Your access is waiting for approval. Ask the owner to approve you, then sign in again.");
       return;
     }
     /* Each sign in opens one desk only:
@@ -266,7 +272,8 @@
 
   function showReset() {
     $("#gate").hidden = false;
-    $("#desk").hidden = true;
+    const desk = $("#desk");
+    if (desk) desk.hidden = true;
     $("#gateForm").hidden = true;
     $("#resetForm").hidden = false;
     $("#gateMsg").textContent = "";
@@ -316,6 +323,7 @@
   }
 
   function showDesk() {
+    mountDesk();
     $("#gate").hidden = true;
     $("#desk").hidden = false;
     $("#who").textContent = me.email + (me.role === "owner" ? " · owner" : "");
@@ -348,6 +356,7 @@
       return;
     }
     $("#deskMsg").textContent = "";
+    if (IS_OWNER) loadStaff();
     PRODUCTS = (p.data || []).map((x) => Object.assign({}, x, { store: x.store || STORES[0].slug }));
     ORDERS = (o.data || []).map((x) => Object.assign({}, x, { store: x.store || STORES[0].slug }));
     renderAll();
@@ -357,7 +366,7 @@
 
   function buildNav() {
     const item = (cls) => PANES.map((p) =>
-      `<button type="button" class="${cls}" data-pane="${p.id}">${p.icon}<span>${p.label}</span>${p.id === "orders" ? '<i class="count" hidden></i>' : ""}</button>`
+      `<button type="button" class="${cls}" data-pane="${p.id}">${p.icon}<span>${p.label}</span>${p.id === "orders" || p.id === "staff" ? '<i class="count" hidden></i>' : ""}</button>`
     ).join("");
     $("#sideNav").innerHTML = item("side__link");
     $("#tabbar").innerHTML = item("");
@@ -770,6 +779,7 @@
     const modes = [
       { id: "pending", label: "Waiting for verification", count: waiting },
       { id: "verified", label: "Verified", count: 0 },
+      { id: "cancelled", label: "Cancelled", count: 0 },
       { id: "all", label: "All orders", count: 0 }
     ];
     $("#verifSwitch").innerHTML = modes.map((m) =>
@@ -780,6 +790,7 @@
     const shown = all.filter((o) => {
       if (ui.verif === "pending" && !isWaiting(o)) return false;
       if (ui.verif === "verified" && !o.verified_at) return false;
+      if (ui.verif === "cancelled" && o.status !== "cancelled") return false;
       if (ui.status !== "all" && o.status !== ui.status) return false;
       if (q && (String(o.code) + " " + o.customer_name + " " + o.customer_phone).toLowerCase().indexOf(q) === -1) return false;
       return true;
@@ -900,6 +911,111 @@
       Array.from(byCat.entries()).sort((a, b) => b[1] - a[1]).map((e) => ({ label: e[0], value: e[1], sub: money(e[1]) })));
   }
 
+  /* --- staff access (owner desk only) -------------------------------------------------- */
+
+  async function loadStaff() {
+    if (!IS_OWNER || !sb) return;
+    const { data, error } = await sb.rpc("list_staff_accounts");
+    if (error) {
+      const hint = /function|does not exist|schema cache/i.test(error.message)
+        ? " Run docs/supabase-staff-approval.sql in the Supabase SQL editor first." : "";
+      note("#staffMsg", "Could not load staff: " + error.message + "." + hint, false);
+      return;
+    }
+    $("#staffMsg").textContent = "";
+    STAFF = data || [];
+    renderStaff();
+  }
+
+  const storeOptions = (selected) => STORES.map((s) =>
+    `<option value="${esc(s.slug)}"${s.slug === selected ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+
+  function pendingRow(a) {
+    const ok = !!a.confirmed_at;
+    return `
+      <div class="row" style="grid-template-columns:1fr">
+        <div>
+          <div class="row__title">${esc(a.account_email)}
+            <span class="pill ${ok ? "pill--done" : "pill--wait"}">${ok ? "Email confirmed" : "Email not confirmed yet"}</span>
+          </div>
+          <div class="row__meta">Asked ${when(a.created_at)}${ok ? "" : " · they must tap the link in their email first"}</div>
+        </div>
+        <div class="row__acts" style="grid-column:auto">
+          <select class="mini" data-store-for="${esc(a.account_id)}" aria-label="Desk for ${esc(a.account_email)}">${storeOptions(STORES[0].slug)}</select>
+          <button class="mini mini--go" type="button" data-approve="${esc(a.account_id)}"${ok ? "" : " disabled"}>Approve</button>
+        </div>
+      </div>`;
+  }
+
+  function activeRow(a) {
+    const mine = me && a.account_email === me.email;
+    const owner = a.staff_role === "owner";
+    return `
+      <div class="row" style="grid-template-columns:1fr">
+        <div>
+          <div class="row__title">${esc(a.account_email)}${mine ? ' <span class="pill">You</span>' : ""}
+            ${owner ? '<span class="pill pill--new">Owner</span>' : badge(a.staff_store)}
+          </div>
+          <div class="row__meta">${owner ? "Owner · both boutiques, view only" : "Store admin · " + esc(storeOf(a.staff_store).name)} · ${a.last_sign_in ? "last sign in " + when(a.last_sign_in) : "has not signed in yet"}</div>
+        </div>
+        ${owner ? "" : `
+        <div class="row__acts" style="grid-column:auto">
+          <select class="mini" data-store-for="${esc(a.account_id)}" aria-label="Desk for ${esc(a.account_email)}">${storeOptions(a.staff_store)}</select>
+          <button class="mini" type="button" data-approve="${esc(a.account_id)}">Move</button>
+          <button class="mini" type="button" data-reset-staff="${esc(a.account_id)}">Send reset link</button>
+          <button class="mini mini--danger" type="button" data-remove-staff="${esc(a.account_id)}">Remove access</button>
+        </div>`}
+      </div>`;
+  }
+
+  function renderStaff() {
+    if (!IS_OWNER) return;
+    const waiting = STAFF.filter((a) => !a.staff_role);
+    const active = STAFF.filter((a) => a.staff_role);
+    $("#staffPending").innerHTML = waiting.length
+      ? waiting.map(pendingRow).join("")
+      : '<div class="empty"><b>Nobody is waiting</b>When someone asks for access, they appear here.</div>';
+    $("#staffActive").innerHTML = active.length
+      ? active.map(activeRow).join("")
+      : '<div class="empty"><b>No staff yet</b></div>';
+    $$('[data-pane="staff"] .count').forEach((el) => {
+      el.textContent = waiting.length;
+      el.hidden = waiting.length === 0;
+    });
+  }
+
+  const staffRow = (id) => STAFF.find((a) => String(a.account_id) === String(id));
+
+  async function approveStaff(id) {
+    const pick = document.querySelector('[data-store-for="' + id + '"]');
+    const store = pick ? pick.value : STORES[0].slug;
+    const who = staffRow(id);
+    const { error } = await sb.rpc("assign_staff", { p_user: id, p_store: store });
+    if (error) { flash(error.message, true); return; }
+    flash((who ? who.account_email : "Done") + " is now on " + storeOf(store).name);
+    loadStaff();
+  }
+
+  async function removeStaff(id) {
+    const who = staffRow(id);
+    if (!window.confirm("Remove desk access for " + (who ? who.account_email : "this person") + "? Their login stays, but opens nothing.")) return;
+    const { error } = await sb.rpc("remove_staff", { p_user: id });
+    if (error) { flash(error.message, true); return; }
+    flash("Access removed");
+    loadStaff();
+  }
+
+  async function resetStaff(id) {
+    const who = staffRow(id);
+    if (!who) return;
+    const desk = { maggies: "maggie.html", davids: "david.html" }[who.staff_store] || "index.html";
+    const { error } = await sb.auth.resetPasswordForEmail(who.account_email, {
+      redirectTo: location.origin + location.pathname.replace(/[^/]*$/, desk)
+    });
+    if (error) { flash(/rate|limit|seconds/i.test(error.message) ? "Too many emails just now. Try again in a few minutes." : error.message, true); return; }
+    flash("Reset link sent to " + who.account_email);
+  }
+
   /* --- render + wiring ---------------------------------------------------------------- */
 
   function updateBadges() {
@@ -940,14 +1056,23 @@
     });
   }
 
-  async function boot() {
+  let mounted = false;
+
+  /* The dashboard is not part of the page. Its markup is loaded from
+     js/desk.js and added only after someone has signed in, so a visitor
+     who is not signed in sees nothing but the sign in form. */
+  function mountDesk() {
+    if (mounted) return;
+    mounted = true;
+    document.body.insertAdjacentHTML("beforeend", window.MC_DESK_HTML || "");
     fillSelects();
     buildNav();
-    wirePasswordToggle();
-
-    $("#gateForm").addEventListener("submit", signIn);
-    $("#forgotBtn").addEventListener("click", forgotPassword);
-    $("#resetForm").addEventListener("submit", saveNewPassword);
+    /* the theme buttons did not exist when theme.js labelled them */
+    const dark = document.documentElement.getAttribute("data-theme") === "dark";
+    $$("[data-theme-toggle]").forEach((b) => {
+      b.textContent = dark ? "\u2600 Light" : "\uD83C\uDF19 Dark";
+      b.setAttribute("aria-pressed", String(dark));
+    });
     $("#signOut").addEventListener("click", signOut);
     $("#signOutMobile").addEventListener("click", signOut);
     $("#refreshAll").addEventListener("click", async () => { await loadData(); flash("Up to date"); });
@@ -957,6 +1082,12 @@
       if (nav) { setPane(nav.dataset.pane); return; }
       const go = event.target.closest("[data-goto]");
       if (go) { setPane(go.dataset.goto); return; }
+      const ap = event.target.closest("[data-approve]");
+      if (ap) { approveStaff(ap.dataset.approve); return; }
+      const rm = event.target.closest("[data-remove-staff]");
+      if (rm) { removeStaff(rm.dataset.removeStaff); return; }
+      const rs = event.target.closest("[data-reset-staff]");
+      if (rs) { resetStaff(rs.dataset.resetStaff); return; }
       const delOrder = event.target.closest("[data-delete-order]");
       if (delOrder) { deleteOrder(delOrder.dataset.deleteOrder); return; }
       const verify = event.target.closest("[data-verify]");
@@ -1007,6 +1138,14 @@
       const del = event.target.closest("[data-delete]");
       if (del) deleteProduct(del.dataset.delete);
     });
+  }
+
+  async function boot() {
+    wirePasswordToggle();
+
+    $("#gateForm").addEventListener("submit", signIn);
+    $("#forgotBtn").addEventListener("click", forgotPassword);
+    $("#resetForm").addEventListener("submit", saveNewPassword);
 
     if (!sb) {
       showGate("Supabase is not configured yet. Add your project URL and anon key to js/config.js.");

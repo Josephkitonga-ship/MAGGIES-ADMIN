@@ -76,7 +76,7 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
 .side { display: none; }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
