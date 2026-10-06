@@ -147,9 +147,11 @@
     women: "Letters (XS\u20135XL), or One size.",
     men: "Letters (XS\u20135XL), or numbers (28\u201346) for trousers.",
     kids: "By age: 2-3Y, 4-5Y, 6-7Y, 8-9Y, 10-11Y, 12-13Y, 14-15Y.",
+    unisex: "Letters (XS\u20135XL), or One size.",
     shoes: "EU numbers, for example 36, 37, 38 \u2026 45.",
     bags: "Small, Medium, Large, or Suitcase for travel cases.",
-    accessories: "One size, unless it comes in sizes."
+    accessories: "One size, unless it comes in sizes.",
+    home: "One size, or the dimensions, for example 6x6 ft or Queen."
   };
 
   function fillTypes(selected) {

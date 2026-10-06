@@ -19,7 +19,11 @@ const CLOTHING_TYPES = [
   { slug: "suits", name: "Suits & formalwear" },
   { slug: "activewear", name: "Activewear" },
   { slug: "sleepwear", name: "Sleepwear & underwear" },
-  { slug: "african", name: "African wear" }
+  { slug: "african", name: "African wear" },
+  { slug: "shorts", name: "Shorts" },
+  { slug: "sets", name: "Sets & jumpsuits" },
+  { slug: "swimwear", name: "Swimwear" },
+  { slug: "uniforms", name: "Uniforms" }
 ];
 
 const SHOP = {
@@ -38,19 +42,28 @@ const SHOP = {
     { slug: "women", name: "Women", types: CLOTHING_TYPES },
     { slug: "men", name: "Men", types: CLOTHING_TYPES },
     { slug: "kids", name: "Kids & teens", types: CLOTHING_TYPES },
+    { slug: "unisex", name: "Unisex", types: CLOTHING_TYPES },
     { slug: "shoes", name: "Shoes", types: [
       { slug: "sandals", name: "Sandals" }, { slug: "heels", name: "Heels" },
       { slug: "flats", name: "Flats" }, { slug: "sneakers", name: "Sneakers" },
-      { slug: "formal-shoes", name: "Formal shoes" }
+      { slug: "boots", name: "Boots" }, { slug: "formal-shoes", name: "Formal shoes" },
+      { slug: "school-shoes", name: "School shoes" }, { slug: "slippers", name: "Slippers & slides" }
     ] },
     { slug: "bags", name: "Bags", types: [
       { slug: "handbags", name: "Handbags" }, { slug: "backpacks", name: "Backpacks" },
-      { slug: "travel", name: "Travel & suitcases" }
+      { slug: "travel", name: "Travel & suitcases" }, { slug: "wallets", name: "Wallets & purses" }
     ] },
     { slug: "accessories", name: "Accessories", types: [
       { slug: "jewellery", name: "Jewellery" }, { slug: "belts", name: "Belts" },
       { slug: "scarves", name: "Scarves" }, { slug: "caps", name: "Caps & hats" },
-      { slug: "watches", name: "Watches" }, { slug: "sunglasses", name: "Sunglasses" }
+      { slug: "watches", name: "Watches" }, { slug: "sunglasses", name: "Sunglasses" },
+      { slug: "ties", name: "Ties & bow ties" }, { slug: "hair", name: "Hair accessories" },
+      { slug: "socks", name: "Socks & hosiery" }
+    ] },
+    { slug: "home", name: "Home & Living", types: [
+      { slug: "bedding", name: "Bedding & duvets" }, { slug: "curtains", name: "Curtains & decor" },
+      { slug: "towels", name: "Towels & linen" }, { slug: "kitchen", name: "Kitchen & dining" },
+      { slug: "rugs", name: "Rugs & mats" }, { slug: "home-more", name: "More for the home" }
     ] }
   ]
 };

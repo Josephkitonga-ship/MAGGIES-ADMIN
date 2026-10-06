@@ -224,3 +224,39 @@ a.card__media { display: block; color: inherit; }
 
 /* New arrivals filter */
 .switch__btn[data-fresh].is-active { background: var(--hot); border-color: var(--hot); }
+
+/* ===========================================================
+   Compact product cards: landscape photo, price first, small button.
+   Two to a row on a phone, five across on a wide screen.
+   =========================================================== */
+
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.grid { gap: 0.6rem; }
+@media (min-width: 620px) {
+  .grid { gap: 0.8rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); }
+}
+
+.card--product { border-radius: 12px; }
+.card--product .card__media { aspect-ratio: 4 / 3; }
+.card--product .card__body { padding: 0.55rem 0.6rem 0.65rem; gap: 0.15rem; }
+
+.card--product .card__priceline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.4rem; }
+.card--product .price-now { font-family: var(--display); font-weight: 600; font-size: 1.02rem; line-height: 1.1; color: var(--plum); }
+.card--product .price-now.is-sale { color: var(--sale-ink); }
+.card--product .price-was { font-size: 0.74rem; color: var(--ink-soft); line-height: 1.1; }
+.card--product .badge { font-size: 0.64rem; padding: 0.22rem 0.5rem; }
+.card--product .card__media .badge--hot { top: 0.5rem; left: 0.5rem; bottom: auto; }
+
+.card--product .card__name {
+  margin: 0.15rem 0 0; font-size: 0.92rem; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card--product .card__cat { font-size: 0.7rem; }
+.card--product .card__size { margin: 0.3rem 0 0; }
+.card--product .card__size select { padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+.card--product .btn { width: 100%; margin-top: 0.4rem; padding: 0.5rem 0.6rem; font-size: 0.8rem; }
+
+/* the home page "new on the rail" strip uses the same smaller cards */
+.rail { grid-auto-columns: minmax(168px, 46vw); gap: 0.7rem; }
+@media (min-width: 720px) { .rail { grid-auto-columns: minmax(190px, 21%); } }
