@@ -1,19 +1,20 @@
 /* ===========================================================
-   MAGGIE'S COLLECTION — admin/admin.js
-   One script, three desks. The page says which one it is with
-   <body data-store="maggies | davids | owner">:
+   MAGGIE'S COLLECTION — admin.js
+   One script, two desks. The page says which one it is with
+   <body data-desk="counter | manager">:
 
-     maggies / davids   that boutique's products, orders, sales
-     owner              both boutiques, side by side
+     counter   sell at the till, stock, products, website orders
+     manager   all of that, plus reports, staff approval,
+               voiding till sales and deleting products
 
-   Who may see what is decided by the database (row level
-   security in docs/supabase-two-stores.sql). This file only
-   decides what to show; it cannot widen access.
+   Who may do what is decided by the database (row level security
+   and functions in docs/supabase-counter-manager.sql). This file
+   only decides what to show; it cannot widen access.
 
-   Numbers: a "sale" is an order that has been VERIFIED and not
-   cancelled. Sales are the item subtotal (delivery fees are not
-   sales). Discount given = (marked price - selling price) x qty,
-   stamped on the order when it was placed.
+   Numbers: a "sale" is a till sale that has not been voided, or a
+   website order that has been VERIFIED and not cancelled. Sales are
+   the item subtotal (delivery fees are not sales). Discount given =
+   (marked or list price - price charged) x qty.
    =========================================================== */
 
 (function () {
@@ -25,14 +26,12 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  const MODE = document.body.dataset.store || "";
-  const IS_OWNER = MODE === "owner";
-  const STORE_MODE = IS_OWNER ? null : MODE;
-  /* The owner desk is view only: sales, discounts and comparisons.
-     Adding products, verifying orders and changing statuses belong to
-     the store admins. The database enforces this too
-     (docs/supabase-owner-readonly.sql); hiding the buttons is just manners. */
-  const CAN_EDIT = !IS_OWNER;
+  const MODE = document.body.dataset.desk || "counter";
+  const IS_MANAGER = MODE === "manager";
+  const LOW_AT = 3;   // this many pieces or fewer counts as "low"
+
+  /* The old role names still work until docs/supabase-single-store-cleanup.sql is run. */
+  const roleOf = (role) => (role === "store_admin" ? "counter" : role === "owner" ? "manager" : role);
 
   const KEYS_READY =
     window.SUPABASE_URL.indexOf("YOUR-PROJECT-REF") === -1 &&
@@ -63,33 +62,44 @@
 
   const PANES_BASE = [
     { id: "overview", label: "Overview", title: "Overview", icon: svg('<rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/>') },
+    { id: "sell", label: "Sell", title: "Sell at the till", icon: svg('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7h7M8.5 11h1M12 11h1M15.5 11h0M8.5 15h1M12 15h1M15.5 15h0"/>') },
+    { id: "orders", label: "Orders", title: "Website orders", icon: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>') },
     { id: "products", label: "Products", title: "Products", icon: svg('<path d="M3.5 12.5v-8h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.2"/>') },
-    { id: "orders", label: "Orders", title: "Orders", icon: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>') },
-    { id: "stats", label: "Stats", title: "Sales and discounts", icon: svg('<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>') }
+    { id: "stock", label: "Stock", title: "Stock", icon: svg('<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>') },
+    { id: "sales", label: "Till sales", title: "Till sales", icon: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>') }
   ];
 
-  const PANES = PANES_BASE.concat(IS_OWNER ? [
+  const PANES = PANES_BASE.concat(IS_MANAGER ? [
+    { id: "stats", label: "Reports", title: "Sales and discounts", icon: svg('<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>') },
     { id: "staff", label: "Staff", title: "Staff access", icon: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11v6M14 14h6"/>') }
   ] : []);
 
   /* --- state ------------------------------------------------------ */
 
-  let me = null;               // { email, role, store }
+  let me = null;               // { email, role }
   let PRODUCTS = [];
   let ORDERS = [];
-  let STAFF = [];   // everyone with a login, from list_staff_accounts() (owner only)
+  let POS = [];                // till sales
+  let STOCK = new Map();       // product id -> Map(size -> qty); no entry = not counted yet
+  let MOVES = [];              // recent stock movements
+  let STAFF = [];              // everyone with a login, from list_staff_accounts() (manager only)
+  let CART = [];               // the sale being rung up
+  let payMethod = "cash";
   let editingId = null;
   let editingImageUrl = "";
   let editingGallery = [];
 
   const ui = {
     pane: "overview",
-    scope: STORE_MODE || "all",   // owner can switch: all | maggies | davids
     period: 30,
-    verif: "pending",             // pending | verified | all
+    verif: "pending",             // pending | verified | cancelled | all
     status: "all",
     orderQuery: "",
-    prodQuery: ""
+    prodQuery: "",
+    sellQuery: "",
+    stockQuery: "",
+    stockFilter: "all",           // all | low | out | untracked
+    salesQuery: ""
   };
 
   /* --- helpers ---------------------------------------------------- */
@@ -109,15 +119,6 @@
     return String(text == null ? "" : text)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-
-  function storeOf(slug) {
-    return STORES.find((s) => s.slug === slug) || STORES[0];
-  }
-
-  function badge(slug) {
-    const s = storeOf(slug);
-    return '<span class="badge badge--' + esc(s.slug) + '">' + esc(s.short) + "</span>";
   }
 
   const DEPTS = SHOP.departments;
@@ -188,29 +189,30 @@
   const dayKey = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const sum = (list, pick) => list.reduce((t, x) => t + (Number(pick(x)) || 0), 0);
 
-  function scoped(rows) {
-    return ui.scope === "all" ? rows : rows.filter((r) => r.store === ui.scope);
-  }
-
   const isSale = (o) => !!o.verified_at && o.status !== "cancelled";
   const isWaiting = (o) => !o.verified_at && o.status !== "cancelled";
   const itemsOf = (o) => (Array.isArray(o.items) ? o.items : []);
   const unitsOf = (o) => sum(itemsOf(o), (i) => i.qty);
 
-  function summarise(orders) {
-    const sold = orders.filter(isSale);
-    const wait = orders.filter(isWaiting);
-    const sales = sum(sold, (o) => o.subtotal);
+  /* Every sale, website and till, in one shape. channel: "web" | "till" */
+  function saleRecords() {
+    const web = ORDERS.filter(isSale).map((o) => Object.assign({}, o, { channel: "web" }));
+    const till = POS.filter((s) => !s.voided_at).map((s) => Object.assign({}, s, { channel: "till" }));
+    return web.concat(till);
+  }
+
+  function summariseSales(records) {
+    const sales = sum(records, (r) => r.subtotal);
     return {
       sales: sales,
-      orders: sold.length,
-      units: sum(sold, unitsOf),
-      discount: sum(sold, (o) => o.discount_total),
-      aov: sold.length ? Math.round(sales / sold.length) : 0,
-      waitCount: wait.length,
-      waitValue: sum(wait, (o) => o.subtotal)
+      count: records.length,
+      units: sum(records, unitsOf),
+      discount: sum(records, (r) => r.discount_total),
+      aov: records.length ? Math.round(sales / records.length) : 0
     };
   }
+
+  const waitingOrders = () => ORDERS.filter(isWaiting);
 
   function sinceDays(orders, days) {
     const from = startOfDay(new Date());
@@ -229,28 +231,32 @@
 
   async function enter(user) {
     const { data: staff, error } = await sb
-      .from("staff").select("role, store").eq("user_id", user.id).maybeSingle();
+      .from("staff").select("role").eq("user_id", user.id).maybeSingle();
 
     if (error || !staff) {
       await sb.auth.signOut();
-      showGate("Your access is waiting for approval. Ask the owner to approve you, then sign in again.");
+      showGate("Your access is waiting for approval. Ask the manager to approve you, then sign in again.");
       return;
     }
-    /* Each sign in opens one desk only:
-         owner.html        owner accounts
-         maggie / david    that store's own admin accounts
-       An owner account is not let into a store desk. */
-    const allowed = IS_OWNER
-      ? staff.role === "owner"
-      : (staff.role === "store_admin" && staff.store === MODE);
-    if (!allowed) {
+    const role = roleOf(staff.role);
+    if (role !== "counter" && role !== "manager") {
       await sb.auth.signOut();
-      const own = staff.role === "owner" ? "the owner desk" : storeOf(staff.store).name + "'s desk";
-      showGate("This sign in belongs to " + own + ". Go back to the staff sign in page and choose your own desk.");
+      showGate("This account does not have desk access. Ask the manager.");
+      return;
+    }
+    /* counter staff cannot open the manager desk; a manager who lands on
+       the counter page is simply taken to their own desk */
+    if (IS_MANAGER && role !== "manager") {
+      await sb.auth.signOut();
+      showGate("This sign in belongs to the counter. Go back to the staff sign in page and choose Counter.");
+      return;
+    }
+    if (!IS_MANAGER && role === "manager") {
+      location.replace("manager.html");
       return;
     }
 
-    me = { email: user.email, role: staff.role, store: staff.store };
+    me = { email: user.email, role: role };
     showDesk();
   }
 
@@ -330,39 +336,52 @@
     mountDesk();
     $("#gate").hidden = true;
     $("#desk").hidden = false;
-    $("#who").textContent = me.email + (me.role === "owner" ? " · owner" : "");
-    const label = IS_OWNER ? "Owner desk" : storeOf(MODE).name;
-    $("#deskName").textContent = label;
-    $("#deskKind").textContent = IS_OWNER ? "Both boutiques · view only" : "Store desk";
-    $("#topStore").textContent = label + (IS_OWNER ? " · view only" : "");
-    $("#addProduct").hidden = !CAN_EDIT;
-    $$("[data-owner-only]").forEach((el) => { el.hidden = !IS_OWNER; });
+    $("#who").textContent = me.email + (IS_MANAGER ? " · manager" : " · counter");
+    $("#deskName").textContent = STORES[0].name;
+    $("#deskKind").textContent = IS_MANAGER ? "Manager" : "Counter";
+    $("#topStore").textContent = IS_MANAGER ? "Manager" : "Counter";
     setPane(ui.pane);
     loadData();
   }
 
   /* --- data --------------------------------------------------------- */
 
+  function indexStock(rows) {
+    const map = new Map();
+    rows.forEach((r) => {
+      if (!map.has(r.product_id)) map.set(r.product_id, new Map());
+      map.get(r.product_id).set(r.size || "", Number(r.qty) || 0);
+    });
+    return map;
+  }
+
   async function loadData() {
     if (!sb) return;
-    let pq = sb.from("products").select("*").order("sort", { ascending: true });
-    /* max 1000 recent orders; RLS already limits store admins to their own */
-    let oq = sb.from("orders").select("*").order("created_at", { ascending: false }).limit(1000);
-    if (STORE_MODE) { pq = pq.eq("store", STORE_MODE); oq = oq.eq("store", STORE_MODE); }
-
-    const [p, o] = await Promise.all([pq, oq]);
+    const [p, o, st, ps, mv] = await Promise.all([
+      sb.from("products").select("*").order("sort", { ascending: true }),
+      /* max 1000 recent orders and till sales */
+      sb.from("orders").select("*").order("created_at", { ascending: false }).limit(1000),
+      sb.from("product_stock").select("product_id, size, qty"),
+      sb.from("pos_sales").select("*").order("created_at", { ascending: false }).limit(1000),
+      sb.from("stock_movements").select("*").order("created_at", { ascending: false }).limit(100)
+    ]);
     const failed = p.error || o.error;
     if (failed) {
-      const hint = /store|column/i.test(failed.message)
-        ? " Run docs/supabase-two-stores.sql in the Supabase SQL editor first."
-        : "";
-      note("#deskMsg", "Could not load the desk: " + failed.message + "." + hint, false);
+      note("#deskMsg", "Could not load the desk: " + failed.message + ".", false);
       return;
     }
-    $("#deskMsg").textContent = "";
-    if (IS_OWNER) loadStaff();
-    PRODUCTS = (p.data || []).map((x) => Object.assign({}, x, { store: x.store || STORES[0].slug }));
-    ORDERS = (o.data || []).map((x) => Object.assign({}, x, { store: x.store || STORES[0].slug }));
+    const extra = st.error || ps.error || mv.error;
+    if (extra) {
+      note("#deskMsg", "Stock and till sales are not set up yet. Run docs/supabase-counter-manager.sql in the Supabase SQL editor, then refresh. (" + extra.message + ")", false);
+    } else {
+      $("#deskMsg").textContent = "";
+    }
+    if (IS_MANAGER) loadStaff();
+    PRODUCTS = p.data || [];
+    ORDERS = o.data || [];
+    STOCK = indexStock(st.data || []);
+    POS = ps.data || [];
+    MOVES = mv.data || [];
     renderAll();
   }
 
@@ -370,7 +389,7 @@
 
   function buildNav() {
     const item = (cls) => PANES.map((p) =>
-      `<button type="button" class="${cls}" data-pane="${p.id}">${p.icon}<span>${p.label}</span>${p.id === "orders" || p.id === "staff" ? '<i class="count" hidden></i>' : ""}</button>`
+      `<button type="button" class="${cls}" data-pane="${p.id}">${p.icon}<span>${p.label}</span>${p.id === "orders" || p.id === "staff" || p.id === "stock" ? '<i class="count" hidden></i>' : ""}</button>`
     ).join("");
     $("#sideNav").innerHTML = item("side__link");
     $("#tabbar").innerHTML = item("");
@@ -398,7 +417,7 @@
   /* days: [{ date, values:[a] | [a, b] }]  -> grouped bar chart */
   function chartHTML(days) {
     if (days.every((d) => d.values.every((v) => !v))) {
-      return '<div class="empty"><b>No verified sales in this period yet</b>Verify an order and it shows up here.</div>';
+      return '<div class="empty"><b>No sales in this period yet</b>Complete a till sale or verify a website order and it shows up here.</div>';
     }
     const series = days[0].values.length;
     const W = 680, H = 240, L = 44, R = 8, T = 10, B = 26;
@@ -433,27 +452,22 @@
     return out;
   }
 
-  /* One series normally; two (Maggie's, David's) when the owner is looking at both. */
-  function salesChart(orders, days) {
-    const both = IS_OWNER && ui.scope === "all";
-    const keys = both ? STORES.map((s) => s.slug) : [null];
+  /* Two series: website sales and till sales. */
+  function salesChart(records, days) {
     const today = startOfDay(new Date());
     const list = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      list.push({ date: d, key: dayKey(d), values: keys.map(() => 0) });
+      list.push({ date: d, key: dayKey(d), values: [0, 0] });
     }
     const at = new Map(list.map((x, i) => [x.key, i]));
-    orders.filter(isSale).forEach((o) => {
-      const i = at.get(dayKey(new Date(o.created_at)));
+    records.forEach((r) => {
+      const i = at.get(dayKey(new Date(r.created_at)));
       if (i === undefined) return;
-      const s = both ? keys.indexOf(o.store) : 0;
-      if (s >= 0) list[i].values[s] += Number(o.subtotal) || 0;
+      list[i].values[r.channel === "till" ? 1 : 0] += Number(r.subtotal) || 0;
     });
-    const legend = both
-      ? '<div class="legend">' + STORES.map((s, i) => '<span><i style="background:var(--s' + (i + 1) + ')"></i>' + esc(s.name) + "</span>").join("") + "</div>"
-      : "";
+    const legend = '<div class="legend"><span><i style="background:var(--s1)"></i>Website</span><span><i style="background:var(--s2)"></i>Till</span></div>';
     return chartHTML(list) + legend;
   }
 
@@ -473,67 +487,62 @@
     return `<div class="kpi${alert ? " kpi--alert" : ""}"><span class="kpi__label">${esc(label)}</span><span class="kpi__value">${esc(value)}</span><span class="kpi__sub">${esc(sub)}</span></div>`;
   }
 
+  function stockSummary() {
+    let low = 0, out = 0, untracked = 0;
+    PRODUCTS.filter((p) => p.active).forEach((p) => {
+      const s = stockInfo(p);
+      if (!s.tracked) untracked++;
+      else if (s.out) out++;
+      else if (s.low) low++;
+    });
+    return { low: low, out: out, untracked: untracked };
+  }
+
   function renderOverview() {
-    const orders = scoped(ORDERS);
-    const products = scoped(PRODUCTS);
+    const recs = saleRecords();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const today = summarise(sinceDays(orders, 1));
-    const month = summarise(orders.filter((o) => new Date(o.created_at) >= monthStart));
-    const all = summarise(orders);
-    const live = products.filter((p) => p.active).length;
+    const today = summariseSales(sinceDays(recs, 1));
+    const month = summariseSales(recs.filter((r) => new Date(r.created_at) >= monthStart));
+    const waiting = waitingOrders();
+    const stock = stockSummary();
+    const attention = stock.low + stock.out;
 
     $("#ovKpis").innerHTML =
-      kpi("Sales today", money(today.sales), today.orders + (today.orders === 1 ? " verified order" : " verified orders")) +
-      kpi("Sales this month", money(month.sales), month.discount ? money(month.discount) + " in discounts" : month.orders + " verified orders") +
-      kpi("Waiting for verification", String(all.waitCount), all.waitCount ? money(all.waitValue) + " to confirm" : "All caught up", all.waitCount > 0) +
-      kpi("On the rail", String(live), (products.length - live) + " hidden");
+      kpi("Sales today", money(today.sales), today.count + (today.count === 1 ? " sale" : " sales")) +
+      kpi("Sales this month", money(month.sales), month.discount ? money(month.discount) + " in discounts" : month.count + (month.count === 1 ? " sale" : " sales")) +
+      kpi("Waiting for verification", String(waiting.length), waiting.length ? money(sum(waiting, (o) => o.subtotal)) + " to confirm" : "All caught up", waiting.length > 0) +
+      kpi("Stock to look at", String(attention), stock.out + " out · " + stock.low + " low" + (stock.untracked ? " · " + stock.untracked + " not counted yet" : ""), attention > 0);
 
-    const cards = $("#ovStores");
-    cards.hidden = !(IS_OWNER && ui.scope === "all");
-    if (!cards.hidden) {
-      cards.innerHTML = STORES.map((s) => {
-        const mine = ORDERS.filter((o) => o.store === s.slug);
-        const m = summarise(mine.filter((o) => new Date(o.created_at) >= monthStart));
-        const w = summarise(mine);
-        const n = PRODUCTS.filter((p) => p.store === s.slug && p.active).length;
-        return `
-          <article class="storecard storecard--${esc(s.slug)}">
-            <div class="storecard__top"><b>${esc(s.name)}</b></div>
-            <dl>
-              <div><dt>Sales this month</dt><dd>${money(m.sales)}</dd></div>
-              <div><dt>Verified orders this month</dt><dd>${m.orders}</dd></div>
-              <div><dt>Discounts given this month</dt><dd>${money(m.discount)}</dd></div>
-              <div><dt>Waiting for verification</dt><dd>${w.waitCount}${w.waitCount ? " · " + money(w.waitValue) : ""}</dd></div>
-              <div><dt>Pieces on the rail</dt><dd>${n}</dd></div>
-            </dl>
-          </article>`;
-      }).join("");
-    }
+    $("#ovChart").innerHTML = salesChart(sinceDays(recs, 14), 14);
 
-    $("#ovChart").innerHTML = salesChart(sinceDays(orders, 14), 14);
-
-    const waiting = orders.filter(isWaiting).slice(0, 6);
-    $("#ovPending").innerHTML = waiting.length
-      ? waiting.map((o) => `
+    const list = waiting.slice(0, 6);
+    $("#ovPending").innerHTML = list.length
+      ? list.map((o) => `
           <div class="row" style="grid-template-columns:1fr auto">
             <div>
-              <div class="row__title">${esc(o.code || o.id)} ${IS_OWNER ? badge(o.store) : ""}</div>
+              <div class="row__title">${esc(o.code || o.id)}</div>
               <div class="row__meta">${esc(o.customer_name)} · ${money(o.subtotal)} · ${when(o.created_at)}</div>
             </div>
             <div class="row__acts" style="grid-column:auto">
-              ${CAN_EDIT
-                ? `<button class="mini mini--go" type="button" data-verify="${esc(o.id)}">Verify</button>`
-                : '<span class="pill pill--wait">Awaiting verification</span>'}
+              <button class="mini mini--go" type="button" data-verify="${esc(o.id)}">Verify</button>
             </div>
           </div>`).join("")
-      : '<div class="empty"><b>Nothing waiting</b>New orders that need verifying will appear here.</div>';
+      : '<div class="empty"><b>Nothing waiting</b>New website orders that need verifying will appear here.</div>';
   }
 
   /* --- products --------------------------------------------------------------- */
 
+  function stockPill(p) {
+    const s = stockInfo(p);
+    if (!s.tracked) return '<span class="pill">stock not counted</span>';
+    if (s.out) return '<span class="pill pill--wait">out of stock</span>';
+    if (s.low) return '<span class="pill pill--wait">' + s.total + " left</span>";
+    return '<span class="pill pill--done">' + s.total + " in stock</span>";
+  }
+
   function renderProducts() {
     const q = ui.prodQuery.trim().toLowerCase();
-    const rows = scoped(PRODUCTS).filter((p) =>
+    const rows = PRODUCTS.filter((p) =>
       !q || (p.name + " " + placeLabel(p)).toLowerCase().indexOf(q) !== -1);
     const list = $("#productList");
 
@@ -550,32 +559,32 @@
         <div class="row">
           ${p.image_url ? `<img class="row__thumb" src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="row__thumb"></div>'}
           <div>
-            <div class="row__title">${esc(p.name)} ${IS_OWNER ? badge(p.store) : ""}${pct ? `<span class="badge badge--off">−${pct}%</span>` : ""}</div>
+            <div class="row__title">${esc(p.name)}${pct ? `<span class="badge badge--off">−${pct}%</span>` : ""}</div>
             <div class="row__meta">
               <span class="row__price">${money(p.price)}${pct ? `<s>${money(p.compare_price)}</s>` : ""}</span> ·
               ${esc(placeLabel(p))} ·
               ${Array.isArray(p.sizes) && p.sizes.length ? esc(p.sizes.join(", ")) : "no sizes"} ·
+              ${stockPill(p)} ·
               <span class="pill${p.active ? " pill--new" : ""}">${p.active ? "on the rail" : "hidden"}</span>
             </div>
           </div>
-          ${CAN_EDIT ? `<div class="row__acts">
+          <div class="row__acts">
             <button class="mini" type="button" data-edit="${esc(p.id)}">Edit</button>
+            <button class="mini" type="button" data-stockjump="${esc(p.id)}">Stock</button>
             <button class="mini${p.active ? " mini--on" : ""}" type="button" data-toggle="${esc(p.id)}" data-active="${p.active}">${p.active ? "Hide" : "Show"}</button>
-            <button class="mini mini--danger" type="button" data-delete="${esc(p.id)}">Delete</button>
-          </div>` : ""}
+            ${IS_MANAGER ? `<button class="mini mini--danger" type="button" data-delete="${esc(p.id)}">Delete</button>` : ""}
+          </div>
         </div>`;
     }).join("");
   }
 
   function openSheet(product) {
-    if (!CAN_EDIT) return;
     editingId = product ? product.id : null;
     editingImageUrl = product ? (product.image_url || "") : "";
     editingGallery = product && Array.isArray(product.gallery) ? product.gallery.slice() : [];
     $("#sheetTitle").textContent = product ? "Edit product" : "Add a product";
     $("#sheetMsg").textContent = "";
 
-    $("#pStore").value = product ? product.store : (STORE_MODE || (ui.scope !== "all" ? ui.scope : STORES[0].slug));
     $("#pName").value = product ? product.name : "";
     $("#pPrice").value = product ? product.price : "";
     $("#pCompare").value = product && product.compare_price ? product.compare_price : "";
@@ -644,7 +653,6 @@
 
   async function saveProduct(event) {
     event.preventDefault();
-    if (!CAN_EDIT) return;
     if (!sb) { note("#sheetMsg", "Add your Supabase keys to js/config.js first.", false); return; }
 
     const price = Number($("#pPrice").value);
@@ -676,7 +684,6 @@
 
     const highlight = $("#pHighlight").value;
     const payload = {
-      store: IS_OWNER ? $("#pStore").value : STORE_MODE,
       name: name,
       price: price,
       compare_price: compare || null,
@@ -694,6 +701,8 @@
       active: $("#pActive").checked
     };
 
+    if (!editingId) payload.store = STORES[0].slug;
+
     const result = editingId
       ? await sb.from("products").update(payload).eq("id", editingId)
       : await sb.from("products").insert(payload);
@@ -705,7 +714,6 @@
   }
 
   async function toggleProduct(id, isActive) {
-    if (!CAN_EDIT) return;
     const { error } = await sb.from("products").update({ active: !isActive }).eq("id", id);
     if (error) { flash("Could not change that: " + error.message, true); return; }
     flash(isActive ? "Hidden from the rail" : "Back on the rail");
@@ -713,7 +721,7 @@
   }
 
   async function deleteProduct(id) {
-    if (!CAN_EDIT) return;
+    if (!IS_MANAGER) return;
     const row = PRODUCTS.find((p) => String(p.id) === String(id));
     const name = row ? row.name : "this product";
     if (!window.confirm("Delete " + name + " for good? Hiding it keeps the record instead.")) return;
@@ -731,16 +739,15 @@
     const cls = o.status === "cancelled" ? " is-cancelled" : verified ? " is-verified" : "";
     const saved = Number(o.discount_total) || 0;
     const wa = "https://wa.me/" + ORD.waPhone(o.customer_phone) + "?text=" +
-      encodeURIComponent("Hi " + o.customer_name + ", this is " + storeOf(o.store).name + " about your order " + (o.code || "") + ".");
+      encodeURIComponent("Hi " + o.customer_name + ", this is " + STORES[0].name + " about your order " + (o.code || "") + ".");
 
     return `
       <article class="order${cls}">
         <div class="order__head">
           <div class="order__tags">
             <span class="order__code">${esc(o.code || o.id)}</span>
-            ${badge(o.store)}
             <span class="pill${o.status === "new" ? " pill--new" : ""}${o.status === "delivered" ? " pill--done" : ""}">${esc(o.status)}</span>
-            ${o.group_code ? '<span class="pill" title="The customer also asked about pieces from the other store in the same message">Mixed selection</span>' : ""}
+            ${o.stock_deducted ? '<span class="pill pill--done" title="These pieces were taken out of stock when the order was verified">Stock updated</span>' : ""}
           </div>
           <span class="order__when">${when(o.created_at)}</span>
         </div>
@@ -760,24 +767,21 @@
         </div>
         ${o.notes ? `<p class="order__note">Notes: ${esc(o.notes)}</p>` : ""}
         <div class="order__acts">
-          ${CAN_EDIT ? (verified
+          ${verified
             ? `<span class="order__stamp">Verified${o.verified_by ? " by " + esc(o.verified_by) : ""} · ${when(o.verified_at)}</span>
                <button class="mini" type="button" data-unverify="${esc(o.id)}">Undo</button>`
-            : `<button class="mini mini--go" type="button" data-verify="${esc(o.id)}">Verify order</button>`)
-          : (verified
-            ? `<span class="order__stamp">Verified${o.verified_by ? " by " + esc(o.verified_by) : ""} · ${when(o.verified_at)}</span>`
-            : '<span class="pill pill--wait">Awaiting verification</span>')}
-          ${CAN_EDIT ? `<select class="mini" data-status="${esc(o.id)}" aria-label="Order status">
+            : (o.status === "cancelled" ? "" : `<button class="mini mini--go" type="button" data-verify="${esc(o.id)}">Verify order</button>`)}
+          <select class="mini" data-status="${esc(o.id)}" aria-label="Order status">
             ${STATUSES.map((s) => `<option value="${s}"${s === o.status ? " selected" : ""}>${s}</option>`).join("")}
-          </select>` : ""}
-          ${CAN_EDIT && o.status === "cancelled" ? `<button class="mini mini--danger" type="button" data-delete-order="${esc(o.id)}">Delete</button>` : ""}
-          ${CAN_EDIT && ORD.waPhone(o.customer_phone).length >= 11 ? `<a class="mini" href="${esc(wa)}" target="_blank" rel="noopener">Message customer</a>` : ""}
+          </select>
+          ${o.status === "cancelled" ? `<button class="mini mini--danger" type="button" data-delete-order="${esc(o.id)}">Delete</button>` : ""}
+          ${ORD.waPhone(o.customer_phone).length >= 11 ? `<a class="mini" href="${esc(wa)}" target="_blank" rel="noopener">Message customer</a>` : ""}
         </div>
       </article>`;
   }
 
   function renderOrders() {
-    const all = scoped(ORDERS);
+    const all = ORDERS;
     const waiting = all.filter(isWaiting).length;
 
     const modes = [
@@ -808,13 +812,13 @@
   }
 
   async function patchOrder(id, patch, message) {
-    if (!CAN_EDIT) return false;
     const { error } = await sb.from("orders").update(patch).eq("id", id);
     if (error) { flash("Could not update: " + error.message, true); return false; }
     const row = ORDERS.find((o) => String(o.id) === String(id));
     if (row) Object.assign(row, patch);
     renderAll();
     flash(message);
+    if (patch.status === "cancelled") loadData();   // a cancelled verified order puts its stock back
     return true;
   }
 
@@ -822,7 +826,6 @@
      so a real sale can never be wiped by a mis-tap. To remove a test order,
      set it to "cancelled" first. */
   async function deleteOrder(id) {
-    if (!CAN_EDIT) return;
     const row = ORDERS.find((o) => String(o.id) === String(id));
     if (!row || row.status !== "cancelled") { flash("Set the order to cancelled first.", true); return; }
     if (!window.confirm("Delete order " + (row.code || "") + " for good? This cannot be undone.")) return;
@@ -833,81 +836,95 @@
     flash("Order deleted");
   }
 
+  /* Verifying takes the pieces out of stock in the same step (database function).
+     If a piece is short, ask before forcing it through. */
+  async function verifyOrder(id, force) {
+    const { error } = await sb.rpc("verify_order", { p_order: id, p_force: !!force });
+    if (error) {
+      if (!force && /not enough stock/i.test(error.message)) {
+        if (window.confirm(error.message + ".\n\nVerify anyway? Stock will go down to what is left.")) return verifyOrder(id, true);
+        return;
+      }
+      const hint = /function|schema cache/i.test(error.message) ? " Run docs/supabase-counter-manager.sql first." : "";
+      flash("Could not verify: " + error.message + hint, true);
+      return;
+    }
+    flash("Order verified");
+    await loadData();
+  }
+
+  async function unverifyOrder(id) {
+    const { error } = await sb.rpc("unverify_order", { p_order: id });
+    if (error) { flash("Could not undo: " + error.message, true); return; }
+    flash("Verification removed. Stock put back.");
+    await loadData();
+  }
+
   function setVerified(id, on) {
-    return patchOrder(id,
-      on ? { verified_at: new Date().toISOString(), verified_by: me.email } : { verified_at: null, verified_by: null },
-      on ? "Order verified" : "Verification removed");
+    return on ? verifyOrder(id, false) : unverifyOrder(id);
   }
 
   /* --- stats --------------------------------------------------------------------- */
 
   function renderStats() {
-    const orders = sinceDays(scoped(ORDERS), ui.period);
-    const sm = summarise(orders);
+    if (!IS_MANAGER) return;
+    const recs = sinceDays(saleRecords(), ui.period);
+    const sm = summariseSales(recs);
+    const web = summariseSales(recs.filter((r) => r.channel === "web"));
+    const till = summariseSales(recs.filter((r) => r.channel === "till"));
 
     $("#periodSwitch").innerHTML = [7, 30, 90].map((d) =>
       `<button type="button" class="${ui.period === d ? "is-active" : ""}" data-period="${d}">Last ${d} days</button>`).join("");
 
     $("#stKpis").innerHTML =
-      kpi("Verified sales", money(sm.sales), sm.units + (sm.units === 1 ? " piece sold" : " pieces sold")) +
-      kpi("Verified orders", String(sm.orders), sm.waitCount + " still waiting") +
-      kpi("Average order", money(sm.aov), "items only, no delivery") +
+      kpi("Sales", money(sm.sales), sm.units + (sm.units === 1 ? " piece sold" : " pieces sold")) +
+      kpi("Number of sales", String(sm.count), web.count + " website · " + till.count + " till") +
+      kpi("Average sale", money(sm.aov), "items only, no delivery") +
       kpi("Discounts given", money(sm.discount), sm.sales + sm.discount ? Math.round((sm.discount / (sm.sales + sm.discount)) * 100) + "% of marked value" : "none yet");
 
-    $("#stChart").innerHTML = salesChart(orders, ui.period);
+    $("#stChart").innerHTML = salesChart(recs, ui.period);
 
-    const compare = $("#stCompareWrap");
-    compare.hidden = !(IS_OWNER && ui.scope === "all");
-    if (!compare.hidden) {
-      const per = STORES.map((s) => summarise(orders.filter((o) => o.store === s.slug)));
-      const rate = (x) => (x.sales + x.discount ? Math.round((x.discount / (x.sales + x.discount)) * 100) + "%" : "0%");
-      const live = (slug) => PRODUCTS.filter((p) => p.store === slug && p.active).length;
-      const lines = [
-        ["Verified sales", (x) => money(x.sales)],
-        ["Verified orders", (x) => x.orders],
-        ["Pieces sold", (x) => x.units],
-        ["Average order", (x) => money(x.aov)],
-        ["Discounts given", (x) => money(x.discount)],
-        ["Discount as share of marked value", rate],
-        ["Waiting for verification", (x) => x.waitCount + (x.waitCount ? " · " + money(x.waitValue) : "")]
-      ];
-      const total = per[0].sales + per[1].sales;
-      const pct0 = total ? Math.round((per[0].sales / total) * 100) : 0;
-      $("#stCompare").innerHTML = `
-        <table class="compare">
-          <thead><tr><th></th>${STORES.map((s) => `<th>${esc(s.name)}</th>`).join("")}<th>Combined</th></tr></thead>
-          <tbody>
-            ${lines.map((l) => `<tr><td>${l[0]}</td>${per.map((x) => `<td>${l[1](x)}</td>`).join("")}<td>${l[1](sm)}</td></tr>`).join("")}
-            <tr><td>Pieces on the rail</td>${STORES.map((s) => `<td>${live(s.slug)}</td>`).join("")}<td>${live(STORES[0].slug) + live(STORES[1].slug)}</td></tr>
-          </tbody>
-        </table>
-        <div class="share" role="img" aria-label="Share of sales"><span style="width:${pct0}%"></span><span style="width:${total ? 100 - pct0 : 0}%"></span></div>
-        <div class="legend"><span><i style="background:var(--s1)"></i>${esc(STORES[0].short)} ${total ? pct0 : 0}%</span><span><i style="background:var(--s2)"></i>${esc(STORES[1].short)} ${total ? 100 - pct0 : 0}%</span></div>`;
-    }
+    const rate = (x) => (x.sales + x.discount ? Math.round((x.discount / (x.sales + x.discount)) * 100) + "%" : "0%");
+    const lines = [
+      ["Sales", (x) => money(x.sales)],
+      ["Number of sales", (x) => x.count],
+      ["Pieces sold", (x) => x.units],
+      ["Average sale", (x) => money(x.aov)],
+      ["Discounts given", (x) => money(x.discount)],
+      ["Discount as share of marked value", rate]
+    ];
+    const total = web.sales + till.sales;
+    const pctWeb = total ? Math.round((web.sales / total) * 100) : 0;
+    $("#stCompare").innerHTML = `
+      <table class="compare">
+        <thead><tr><th></th><th>Website</th><th>Till</th><th>Combined</th></tr></thead>
+        <tbody>
+          ${lines.map((l) => `<tr><td>${l[0]}</td><td>${l[1](web)}</td><td>${l[1](till)}</td><td>${l[1](sm)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="share" role="img" aria-label="Share of sales"><span style="width:${pctWeb}%"></span><span style="width:${total ? 100 - pctWeb : 0}%"></span></div>
+      <div class="legend"><span><i style="background:var(--s1)"></i>Website ${total ? pctWeb : 0}%</span><span><i style="background:var(--s2)"></i>Till ${total ? 100 - pctWeb : 0}%</span></div>`;
 
     /* best sellers */
-    const sold = orders.filter(isSale);
     const byProduct = new Map();
-    sold.forEach((o) => itemsOf(o).forEach((i) => {
-      const key = (i.id || i.name) + "|" + o.store;
-      const row = byProduct.get(key) || { name: i.name, store: o.store, qty: 0, revenue: 0 };
+    recs.forEach((r) => itemsOf(r).forEach((i) => {
+      const key = String(i.id || i.name);
+      const row = byProduct.get(key) || { name: i.name, qty: 0, revenue: 0 };
       row.qty += Number(i.qty) || 0;
       row.revenue += (Number(i.price) || 0) * (Number(i.qty) || 0);
       byProduct.set(key, row);
     }));
-    const showStore = IS_OWNER && ui.scope === "all";
     $("#stTop").innerHTML = hbars(
       Array.from(byProduct.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 6).map((r) => ({
-        label: r.name + (showStore ? " · " + storeOf(r.store).short : ""),
+        label: r.name,
         value: r.revenue,
-        sub: r.qty + " sold · " + money(r.revenue),
-        cls: showStore ? r.store : ""
+        sub: r.qty + " sold · " + money(r.revenue)
       })));
 
     /* departments */
     const deptOf = new Map(PRODUCTS.map((p) => [String(p.id), ORD.placeProduct(p, DEPTS).department]));
     const byCat = new Map();
-    sold.forEach((o) => itemsOf(o).forEach((i) => {
+    recs.forEach((r) => itemsOf(r).forEach((i) => {
       const name = deptName(deptOf.get(String(i.id)) || "");
       byCat.set(name, (byCat.get(name) || 0) + (Number(i.price) || 0) * (Number(i.qty) || 0));
     }));
@@ -915,10 +932,10 @@
       Array.from(byCat.entries()).sort((a, b) => b[1] - a[1]).map((e) => ({ label: e[0], value: e[1], sub: money(e[1]) })));
   }
 
-  /* --- staff access (owner desk only) -------------------------------------------------- */
+  /* --- staff access (manager desk only) -------------------------------------------------- */
 
   async function loadStaff() {
-    if (!IS_OWNER || !sb) return;
+    if (!IS_MANAGER || !sb) return;
     const { data, error } = await sb.rpc("list_staff_accounts");
     if (error) {
       const hint = /function|does not exist|schema cache/i.test(error.message)
@@ -931,9 +948,6 @@
     renderStaff();
   }
 
-  const storeOptions = (selected) => STORES.map((s) =>
-    `<option value="${esc(s.slug)}"${s.slug === selected ? " selected" : ""}>${esc(s.name)}</option>`).join("");
-
   function pendingRow(a) {
     const ok = !!a.confirmed_at;
     return `
@@ -945,7 +959,10 @@
           <div class="row__meta">Asked ${when(a.created_at)}${ok ? "" : " · they must tap the link in their email first"}</div>
         </div>
         <div class="row__acts" style="grid-column:auto">
-          <select class="mini" data-store-for="${esc(a.account_id)}" aria-label="Desk for ${esc(a.account_email)}">${storeOptions(STORES[0].slug)}</select>
+          <select class="mini" data-approve-role="${esc(a.account_id)}" aria-label="Role for ${esc(a.account_email)}"${ok ? "" : " disabled"}>
+            <option value="counter">Counter staff</option>
+            <option value="manager">Manager</option>
+          </select>
           <button class="mini mini--go" type="button" data-approve="${esc(a.account_id)}"${ok ? "" : " disabled"}>Approve</button>
         </div>
       </div>`;
@@ -953,19 +970,18 @@
 
   function activeRow(a) {
     const mine = me && a.account_email === me.email;
-    const owner = a.staff_role === "owner";
+    const manager = roleOf(a.staff_role) === "manager";
     return `
       <div class="row" style="grid-template-columns:1fr">
         <div>
           <div class="row__title">${esc(a.account_email)}${mine ? ' <span class="pill">You</span>' : ""}
-            ${owner ? '<span class="pill pill--new">Owner</span>' : badge(a.staff_store)}
+            <span class="pill ${manager ? "pill--new" : ""}">${manager ? "Manager" : "Counter"}</span>
           </div>
-          <div class="row__meta">${owner ? "Owner · both boutiques, view only" : "Store admin · " + esc(storeOf(a.staff_store).name)} · ${a.last_sign_in ? "last sign in " + when(a.last_sign_in) : "has not signed in yet"}</div>
+          <div class="row__meta">${manager ? "Manager · full access" : "Counter staff · sell, stock, products, orders"} · ${a.last_sign_in ? "last sign in " + when(a.last_sign_in) : "has not signed in yet"}</div>
         </div>
-        ${owner ? "" : `
+        ${manager ? "" : `
         <div class="row__acts" style="grid-column:auto">
-          <select class="mini" data-store-for="${esc(a.account_id)}" aria-label="Desk for ${esc(a.account_email)}">${storeOptions(a.staff_store)}</select>
-          <button class="mini" type="button" data-approve="${esc(a.account_id)}">Move</button>
+          <button class="mini" type="button" data-make-manager="${esc(a.account_id)}">Make manager</button>
           <button class="mini" type="button" data-reset-staff="${esc(a.account_id)}">Send reset link</button>
           <button class="mini mini--danger" type="button" data-remove-staff="${esc(a.account_id)}">Remove access</button>
         </div>`}
@@ -973,7 +989,7 @@
   }
 
   function renderStaff() {
-    if (!IS_OWNER) return;
+    if (!IS_MANAGER) return;
     const waiting = STAFF.filter((a) => !a.staff_role);
     const active = STAFF.filter((a) => a.staff_role);
     $("#staffPending").innerHTML = waiting.length
@@ -990,13 +1006,17 @@
 
   const staffRow = (id) => STAFF.find((a) => String(a.account_id) === String(id));
 
-  async function approveStaff(id) {
-    const pick = document.querySelector('[data-store-for="' + id + '"]');
-    const store = pick ? pick.value : STORES[0].slug;
+  async function approveStaff(id, role) {
     const who = staffRow(id);
-    const { error } = await sb.rpc("assign_staff", { p_user: id, p_store: store });
-    if (error) { flash(error.message, true); return; }
-    flash((who ? who.account_email : "Done") + " is now on " + storeOf(store).name);
+    const asRole = role === "manager" ? "manager" : "counter";
+    if (asRole === "manager" && !window.confirm("Make " + (who ? who.account_email : "this person") + " a manager? Managers can see reports, delete products, void sales and approve staff.")) return;
+    const { error } = await sb.rpc("approve_staff", { p_user: id, p_role: asRole });
+    if (error) {
+      const hint = /function|schema cache/i.test(error.message) ? " Run docs/supabase-counter-manager.sql first." : "";
+      flash(error.message + hint, true);
+      return;
+    }
+    flash((who ? who.account_email : "Done") + (asRole === "manager" ? " is now a manager" : " is now counter staff"));
     loadStaff();
   }
 
@@ -1012,40 +1032,477 @@
   async function resetStaff(id) {
     const who = staffRow(id);
     if (!who) return;
-    const desk = { maggies: "maggie.html", davids: "david.html" }[who.staff_store] || "index.html";
     const { error } = await sb.auth.resetPasswordForEmail(who.account_email, {
-      redirectTo: location.origin + location.pathname.replace(/[^/]*$/, desk)
+      redirectTo: location.origin + location.pathname.replace(/[^/]*$/, "counter.html")
     });
     if (error) { flash(/rate|limit|seconds/i.test(error.message) ? "Too many emails just now. Try again in a few minutes." : error.message, true); return; }
     flash("Reset link sent to " + who.account_email);
   }
 
+  /* =========================================================================
+     STOCK
+     A product is "counted" once it has rows in product_stock. Until then it
+     sells freely and nothing is deducted. Every change goes through the
+     database functions (adjust_stock, set_stock, record_pos_sale,
+     verify_order), so the till and the website can never oversell.
+     ========================================================================= */
+
+  /* the sizes to show for a product: its own sizes, plus any extra size already in stock */
+  function sizesOf(p) {
+    const base = Array.isArray(p.sizes) && p.sizes.length ? p.sizes.slice() : [""];
+    const have = STOCK.get(p.id);
+    if (have) have.forEach((_, size) => { if (base.indexOf(size) === -1) base.push(size); });
+    return base;
+  }
+
+  function stockInfo(p) {
+    const have = STOCK.get(p.id);
+    const sizes = sizesOf(p);
+    if (!have) return { tracked: false, total: 0, out: false, low: false, rows: sizes.map((s) => ({ size: s, qty: null })) };
+    const rows = sizes.map((s) => ({ size: s, qty: have.get(s) || 0 }));
+    const total = sum(rows, (r) => r.qty);
+    return { tracked: true, total: total, out: total === 0, low: total > 0 && total <= LOW_AT, rows: rows };
+  }
+
+  const REASONS = {
+    opening: "Opening count", restock: "Received stock", correction: "Count correction", damaged: "Damaged or lost",
+    return: "Customer return", sale_pos: "Till sale", sale_web: "Website sale", void: "Sale voided", cancelled_order: "Order cancelled"
+  };
+
+  function renderStock() {
+    const q = ui.stockQuery.trim().toLowerCase();
+    const all = PRODUCTS.map((p) => ({ p: p, s: stockInfo(p) }));
+    const counts = {
+      all: all.length,
+      low: all.filter((x) => x.s.tracked && x.s.low).length,
+      out: all.filter((x) => x.s.tracked && x.s.out).length,
+      untracked: all.filter((x) => !x.s.tracked).length
+    };
+    const filters = [["all", "All"], ["low", "Low"], ["out", "Out of stock"], ["untracked", "Not counted yet"]];
+    $("#stockFilter").innerHTML = filters.map((f) =>
+      `<button type="button" class="${ui.stockFilter === f[0] ? "is-active" : ""}" data-stockfilter="${f[0]}">${f[1]} <span class="count">${counts[f[0]]}</span></button>`).join("");
+
+    const rows = all.filter((x) => {
+      if (ui.stockFilter === "low" && !(x.s.tracked && x.s.low)) return false;
+      if (ui.stockFilter === "out" && !(x.s.tracked && x.s.out)) return false;
+      if (ui.stockFilter === "untracked" && x.s.tracked) return false;
+      return !q || (x.p.name + " " + placeLabel(x.p)).toLowerCase().indexOf(q) !== -1;
+    });
+
+    $("#stockList").innerHTML = rows.length
+      ? rows.map((x) => stockBlock(x.p, x.s)).join("")
+      : '<div class="empty"><b>Nothing here</b>Change the filter or clear the search.</div>';
+
+    $("#stockMoves").innerHTML = MOVES.length
+      ? MOVES.slice(0, 40).map((m) => {
+          const p = PRODUCTS.find((x) => String(x.id) === String(m.product_id));
+          return `
+            <div class="move">
+              <b class="move__delta ${m.delta > 0 ? "is-up" : "is-down"}">${m.delta > 0 ? "+" : ""}${m.delta}</b>
+              <div>
+                <div class="row__title">${esc(p ? p.name : "Removed product")}${m.size ? " (" + esc(m.size) + ")" : ""}</div>
+                <div class="row__meta">${esc(REASONS[m.reason] || m.reason)}${m.ref ? " · " + esc(m.ref) : ""}${m.note ? " · " + esc(m.note) : ""} · ${esc(m.by_email || "")} · ${when(m.created_at)}</div>
+              </div>
+            </div>`;
+        }).join("")
+      : '<div class="empty"><b>No movements yet</b>Counts, restocks and sales will be listed here.</div>';
+  }
+
+  function stockBlock(p, s) {
+    const head = `
+      <div class="stockhead">
+        ${p.image_url ? `<img class="row__thumb" src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="row__thumb"></div>'}
+        <div>
+          <div class="row__title">${esc(p.name)} ${stockPill(p)}</div>
+          <div class="row__meta">${money(p.price)} · ${esc(placeLabel(p))}</div>
+        </div>
+      </div>`;
+
+    if (!s.tracked) {
+      return `
+        <article class="panel stockbox" data-pid="${esc(p.id)}">
+          ${head}
+          <p class="hint">Not counted yet, so it sells freely and nothing is deducted. Enter how many you have, then start counting.</p>
+          <div class="stockopen">
+            ${s.rows.map((r) => `
+              <label class="field"><span>${esc(r.size || "Quantity")}</span>
+                <input type="number" min="0" step="1" inputmode="numeric" value="0" data-open-size="${esc(r.size)}"></label>`).join("")}
+          </div>
+          <button class="mini mini--go" type="button" data-startcount="${esc(p.id)}">Start counting</button>
+        </article>`;
+    }
+
+    return `
+      <article class="panel stockbox" data-pid="${esc(p.id)}">
+        ${head}
+        ${s.rows.map((r) => `
+          <div class="stockrow" data-pid="${esc(p.id)}" data-size="${esc(r.size)}">
+            <b class="stockrow__size">${esc(r.size || "All")}</b>
+            <span class="stockrow__qty${r.qty === 0 ? " is-zero" : r.qty <= LOW_AT ? " is-low" : ""}">${r.qty}</span>
+            <input type="number" min="0" step="1" inputmode="numeric" placeholder="qty" aria-label="Quantity">
+            <select aria-label="Reason">
+              <option value="restock">Received stock</option>
+              <option value="return">Customer return</option>
+              <option value="damaged">Damaged or lost</option>
+              <option value="correction">Count correction</option>
+            </select>
+            <button class="mini mini--go" type="button" data-stock-act="add">Add</button>
+            <button class="mini" type="button" data-stock-act="remove">Remove</button>
+            <button class="mini" type="button" data-stock-act="set" title="Set the exact count">Set to</button>
+          </div>`).join("")}
+      </article>`;
+  }
+
+  async function stockRpc(name, args, message) {
+    const { error } = await sb.rpc(name, args);
+    if (error) {
+      const hint = /function|schema cache/i.test(error.message) ? " Run docs/supabase-counter-manager.sql first." : "";
+      flash(error.message + hint, true);
+      return false;
+    }
+    flash(message);
+    await loadData();
+    return true;
+  }
+
+  async function stockAction(row, kind) {
+    const input = row.querySelector("input");
+    const n = Number(input.value);
+    const reason = row.querySelector("select").value;
+    const base = { p_product: row.dataset.pid, p_size: row.dataset.size };
+    if (kind === "set") {
+      if (input.value === "" || !(n >= 0)) { flash("Type the exact count first.", true); return; }
+      return stockRpc("set_stock", Object.assign(base, { p_qty: Math.floor(n), p_note: null }), "Count saved");
+    }
+    if (!(n > 0)) { flash("Type how many first.", true); return; }
+    const qty = Math.floor(n);
+    if (kind === "add") {
+      return stockRpc("adjust_stock", Object.assign(base, { p_delta: qty, p_reason: reason === "return" ? "return" : reason === "restock" ? "restock" : "correction", p_note: null }), qty + " added");
+    }
+    return stockRpc("adjust_stock", Object.assign(base, { p_delta: -qty, p_reason: reason === "damaged" ? "damaged" : "correction", p_note: null }), qty + " removed");
+  }
+
+  async function startCount(pid) {
+    const box = document.querySelector('.stockbox[data-pid="' + pid + '"]');
+    if (!box) return;
+    const inputs = Array.from(box.querySelectorAll("[data-open-size]"));
+    for (const input of inputs) {
+      const n = Number(input.value);
+      if (!(n >= 0)) { flash("Counts cannot be below zero.", true); return; }
+    }
+    for (const input of inputs) {
+      const { error } = await sb.rpc("set_stock", { p_product: pid, p_size: input.dataset.openSize, p_qty: Math.floor(Number(input.value)), p_note: null });
+      if (error) { flash(error.message, true); return; }
+    }
+    flash("Counting started");
+    await loadData();
+  }
+
+  /* =========================================================================
+     SELL (the till)
+     ========================================================================= */
+
+  const PAY = [["cash", "Cash"], ["mpesa", "M-Pesa"], ["card", "Card"], ["other", "Other"]];
+  const cartTotal = () => sum(CART, (l) => l.price * l.qty);
+  const cartSaving = () => sum(CART, (l) => Math.max(l.mark - l.price, 0) * l.qty);
+
+  function renderSell() {
+    const q = ui.sellQuery.trim().toLowerCase();
+    const rows = PRODUCTS.filter((p) => p.active &&
+      (!q || (p.name + " " + placeLabel(p)).toLowerCase().indexOf(q) !== -1)).slice(0, 60);
+
+    $("#sellTiles").innerHTML = rows.length
+      ? rows.map((p) => {
+          const s = stockInfo(p);
+          const pct = ORD.discountPct(p.price, p.compare_price);
+          const chips = s.rows.map((r) => {
+            const out = s.tracked && r.qty <= 0;
+            const label = r.size
+              ? r.size + (s.tracked ? " · " + r.qty : "")
+              : "Add" + (s.tracked ? " · " + r.qty : "");
+            return `<button type="button" class="chip${out ? " is-out" : ""}" data-add="${esc(p.id)}" data-size="${esc(r.size)}"${out ? " disabled" : ""}>${esc(label)}</button>`;
+          }).join("");
+          return `
+            <article class="tile">
+              ${p.image_url ? `<img class="tile__img" src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="tile__img"></div>'}
+              <div class="tile__body">
+                <div class="row__title">${esc(p.name)}</div>
+                <div class="row__meta"><span class="row__price">${money(p.price)}${pct ? `<s>${money(p.compare_price)}</s>` : ""}</span> ${s.tracked ? "" : '<span class="pill">stock not counted</span>'}</div>
+                <div class="chips">${chips}</div>
+              </div>
+            </article>`;
+        }).join("")
+      : '<div class="empty"><b>No pieces found</b>Only products on the rail can be sold. Check the spelling, or show the product from Products.</div>';
+
+    renderCart();
+  }
+
+  function addToCart(id, size) {
+    const p = PRODUCTS.find((x) => String(x.id) === String(id));
+    if (!p) return;
+    const s = stockInfo(p);
+    const row = s.rows.find((r) => r.size === size);
+    const have = s.tracked ? (row ? row.qty : 0) : Infinity;
+    const line = CART.find((l) => String(l.id) === String(p.id) && l.size === size);
+    const next = (line ? line.qty : 0) + 1;
+    if (next > have) { flash("Only " + have + " left in stock.", true); return; }
+    if (line) line.qty = next;
+    else CART.push({ id: p.id, name: p.name, size: size, qty: 1, list: Number(p.price), mark: Number(p.compare_price) || Number(p.price), price: Number(p.price) });
+    $("#receipt").hidden = true;
+    renderCart();
+  }
+
+  function cartLine(key) {
+    return CART.find((l) => l.id + "|" + l.size === key);
+  }
+
+  function renderCart() {
+    $("#cartLines").innerHTML = CART.length
+      ? CART.map((l) => {
+          const key = l.id + "|" + l.size;
+          return `
+            <div class="cartline" data-key="${esc(key)}">
+              <div class="cartline__name"><b>${esc(l.name)}</b>${l.size ? ` <span class="pill">${esc(l.size)}</span>` : ""}</div>
+              <div class="cartline__qty">
+                <button type="button" class="mini" data-cart-dec="${esc(key)}" aria-label="One less">−</button>
+                <b>${l.qty}</b>
+                <button type="button" class="mini" data-cart-inc="${esc(key)}" aria-label="One more">+</button>
+              </div>
+              <label class="cartline__price"><span>Price each</span><input type="number" min="0" step="10" inputmode="numeric" value="${l.price}" data-cart-price="${esc(key)}"></label>
+              <b class="cartline__sum">${money(l.price * l.qty)}</b>
+              <button type="button" class="mini mini--danger" data-cart-remove="${esc(key)}" aria-label="Remove">×</button>
+            </div>`;
+        }).join("")
+      : '<div class="empty"><b>No pieces yet</b>Tap a size on the left to add it.</div>';
+
+    $("#payMethods").innerHTML = PAY.map((m) =>
+      `<button type="button" class="${payMethod === m[0] ? "is-active" : ""}" data-pay="${m[0]}">${m[1]}</button>`).join("");
+    $("#tenderField").hidden = payMethod !== "cash";
+    $("#cartDone").disabled = !CART.length;
+    renderCartTotal();
+  }
+
+  function renderCartTotal() {
+    const total = cartTotal();
+    const saving = cartSaving();
+    const tender = Number($("#cartTender").value);
+    const change = payMethod === "cash" && tender > 0 ? tender - total : null;
+    $("#cartTotal").innerHTML =
+      `<span>Total</span><b>${money(total)}</b>` +
+      (saving ? `<small>Customer saves ${money(saving)}</small>` : "") +
+      (change !== null ? (change >= 0
+        ? `<small class="is-good">Change to give: <b>${money(change)}</b></small>`
+        : `<small class="is-bad">Short by ${money(-change)}</small>`) : "");
+  }
+
+  function clearCart() {
+    CART = [];
+    ["#cartTender", "#cartName", "#cartPhone", "#cartNote"].forEach((sel) => { $(sel).value = ""; });
+    $("#cartMsg").textContent = "";
+    renderCart();
+  }
+
+  async function completeSale() {
+    if (!CART.length) return;
+    const total = cartTotal();
+    const tender = Number($("#cartTender").value);
+    if (payMethod === "cash" && tender > 0 && tender < total) {
+      note("#cartMsg", "The cash received is less than the total.", false);
+      return;
+    }
+    const btn = $("#cartDone");
+    btn.disabled = true;
+    note("#cartMsg", "Recording the sale…", true);
+    const items = CART.map((l) => {
+      const it = { id: l.id, size: l.size, qty: l.qty };
+      if (l.price !== l.list) it.unit_price = l.price;
+      return it;
+    });
+    const { data, error } = await sb.rpc("record_pos_sale", {
+      p_items: items,
+      p_payment: payMethod,
+      p_customer_name: $("#cartName").value.trim() || null,
+      p_customer_phone: $("#cartPhone").value.trim() || null,
+      p_note: $("#cartNote").value.trim() || null
+    });
+    btn.disabled = false;
+    if (error) {
+      const hint = /function|schema cache/i.test(error.message) ? " Run docs/supabase-counter-manager.sql first." : "";
+      note("#cartMsg", error.message + hint, false);
+      return;
+    }
+    const code = data && data.code ? data.code : "";
+    const change = payMethod === "cash" && tender > 0 ? tender - total : null;
+    const box = $("#receipt");
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="receipt">
+        <div><b>Sale ${esc(code)} recorded</b>
+          <p class="hint">${money(total)} · paid by ${esc((PAY.find((m) => m[0] === payMethod) || [0, payMethod])[1])}${change !== null ? " · change " + money(change) : ""}</p></div>
+        <button class="mini" type="button" id="receiptClose">Done</button>
+      </div>`;
+    clearCart();
+    flash("Sale recorded");
+    await loadData();
+  }
+
+  /* =========================================================================
+     TILL SALES (history)
+     ========================================================================= */
+
+  function renderSales() {
+    const live = POS.filter((s) => !s.voided_at);
+    const todays = sinceDays(live, 1);
+    const by = (m) => sum(todays.filter((s) => s.payment === m), (s) => s.subtotal);
+    $("#salesKpis").innerHTML =
+      kpi("Till today", money(sum(todays, (s) => s.subtotal)), todays.length + (todays.length === 1 ? " sale" : " sales")) +
+      kpi("Cash", money(by("cash")), "to count in the drawer") +
+      kpi("M-Pesa", money(by("mpesa")), "check against your phone") +
+      kpi("Card and other", money(by("card") + by("other")), "today");
+
+    const q = ui.salesQuery.trim().toLowerCase();
+    const shown = POS.filter((s) => !q ||
+      ((s.code || "") + " " + (s.customer_name || "") + " " + (s.cashier_email || "")).toLowerCase().indexOf(q) !== -1).slice(0, 150);
+
+    $("#salesList").innerHTML = shown.length
+      ? shown.map((s) => `
+          <article class="order${s.voided_at ? " is-cancelled" : " is-verified"}">
+            <div class="order__head">
+              <div class="order__tags">
+                <span class="order__code">${esc(s.code)}</span>
+                <span class="pill">${esc((PAY.find((m) => m[0] === s.payment) || [0, s.payment])[1])}</span>
+                ${s.voided_at ? '<span class="pill pill--wait">Voided</span>' : ""}
+              </div>
+              <span class="order__when">${when(s.created_at)}</span>
+            </div>
+            <p class="order__who"><b>${esc(s.customer_name || "Walk-in")}</b> <span>${s.customer_phone ? "· " + esc(s.customer_phone) + " " : ""}· sold by ${esc(s.cashier_email || "")}</span></p>
+            <ul class="order__items">
+              ${itemsOf(s).map((i) => `
+                <li><span>${esc(i.qty)} × ${esc(i.name)}${i.size ? " (" + esc(i.size) + ")" : ""}</span>
+                <span>${money(Number(i.price) * Number(i.qty))}</span></li>`).join("")}
+            </ul>
+            <div class="order__money">
+              <span>Total <b>${money(s.subtotal)}</b></span>
+              ${Number(s.discount_total) ? `<span>Customer saved <b>${money(s.discount_total)}</b></span>` : ""}
+            </div>
+            ${s.note ? `<p class="order__note">Note: ${esc(s.note)}</p>` : ""}
+            ${s.voided_at ? `<p class="order__note">Voided by ${esc(s.voided_by || "")} · ${when(s.voided_at)} · ${esc(s.void_reason || "")}</p>` : ""}
+            ${IS_MANAGER && !s.voided_at ? `<div class="order__acts"><button class="mini mini--danger" type="button" data-void="${esc(s.id)}">Void sale</button></div>` : ""}
+          </article>`).join("")
+      : '<div class="empty"><b>No till sales yet</b>Sales you complete on the Sell tab appear here.</div>';
+  }
+
+  async function voidSale(id) {
+    const row = POS.find((s) => String(s.id) === String(id));
+    const reason = window.prompt("Void " + (row ? row.code : "this sale") + "? The pieces go back into stock.\n\nWhy is it being voided?");
+    if (reason === null) return;
+    if (reason.trim().length < 3) { flash("Give a short reason.", true); return; }
+    await stockRpc("void_pos_sale", { p_sale: id, p_reason: reason.trim() }, "Sale voided. Stock put back.");
+  }
+
+  /* --- wiring for Sell, Stock and Till sales ------------------------------------------ */
+
+  function wireTill() {
+    $("#sellSearch").addEventListener("input", (e) => { ui.sellQuery = e.target.value; renderSell(); });
+    $("#stockSearch").addEventListener("input", (e) => { ui.stockQuery = e.target.value; renderStock(); });
+    $("#salesSearch").addEventListener("input", (e) => { ui.salesQuery = e.target.value; renderSales(); });
+    $("#cartTender").addEventListener("input", renderCartTotal);
+    $("#cartClear").addEventListener("click", clearCart);
+    $("#cartDone").addEventListener("click", completeSale);
+
+    $("#sellTiles").addEventListener("click", (e) => {
+      const add = e.target.closest("[data-add]");
+      if (add && !add.disabled) addToCart(add.dataset.add, add.dataset.size || "");
+    });
+
+    $("#cartLines").addEventListener("click", (e) => {
+      const inc = e.target.closest("[data-cart-inc]");
+      const dec = e.target.closest("[data-cart-dec]");
+      const rm = e.target.closest("[data-cart-remove]");
+      if (inc) {
+        const l = cartLine(inc.dataset.cartInc);
+        if (l) addToCart(l.id, l.size);
+      } else if (dec) {
+        const l = cartLine(dec.dataset.cartDec);
+        if (l) { l.qty -= 1; if (l.qty < 1) CART = CART.filter((x) => x !== l); renderCart(); }
+      } else if (rm) {
+        const l = cartLine(rm.dataset.cartRemove);
+        if (l) { CART = CART.filter((x) => x !== l); renderCart(); }
+      }
+    });
+
+    /* a negotiated price: never above the shop price, the database checks it too */
+    $("#cartLines").addEventListener("change", (e) => {
+      const input = e.target.closest("[data-cart-price]");
+      if (!input) return;
+      const l = cartLine(input.dataset.cartPrice);
+      if (!l) return;
+      let v = Number(input.value);
+      if (!(v >= 0)) v = l.price;
+      if (v > l.list) { v = l.list; flash("The price cannot be above " + money(l.list) + ".", true); }
+      l.price = v;
+      renderCart();
+    });
+
+    $("#payMethods").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-pay]");
+      if (b) { payMethod = b.dataset.pay; renderCart(); }
+    });
+
+    $("#receipt").addEventListener("click", (e) => {
+      if (e.target.closest("#receiptClose")) $("#receipt").hidden = true;
+    });
+
+    $("#stockFilter").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-stockfilter]");
+      if (b) { ui.stockFilter = b.dataset.stockfilter; renderStock(); }
+    });
+
+    $("#stockList").addEventListener("click", (e) => {
+      const act = e.target.closest("[data-stock-act]");
+      if (act) { stockAction(act.closest(".stockrow"), act.dataset.stockAct); return; }
+      const start = e.target.closest("[data-startcount]");
+      if (start) startCount(start.dataset.startcount);
+    });
+
+    $("#salesList").addEventListener("click", (e) => {
+      const v = e.target.closest("[data-void]");
+      if (v) voidSale(v.dataset.void);
+    });
+  }
+
   /* --- render + wiring ---------------------------------------------------------------- */
 
   function updateBadges() {
-    const n = scoped(ORDERS).filter(isWaiting).length;
+    const n = waitingOrders().length;
     $$('[data-pane="orders"] .count').forEach((el) => {
       el.textContent = n;
       el.hidden = n === 0;
+    });
+    const st = stockSummary();
+    const attention = st.low + st.out;
+    $$('[data-pane="stock"] .count').forEach((el) => {
+      el.textContent = attention;
+      el.hidden = attention === 0;
     });
   }
 
   function renderAll() {
     updateBadges();
     renderOverview();
+    renderSell();
     renderProducts();
     renderOrders();
+    renderStock();
+    renderSales();
     renderStats();
   }
 
   function fillSelects() {
     $("#pDepartment").innerHTML = DEPTS.map((d) => `<option value="${d.slug}">${esc(d.name)}</option>`).join("");
     fillTypes();
-    $("#pStore").innerHTML = STORES.map((s) => `<option value="${s.slug}">${esc(s.name)}</option>`).join("");
     $("#orderStatus").innerHTML = ['<option value="all">Any status</option>']
       .concat(STATUSES.map((s) => `<option value="${s}">${s}</option>`)).join("");
-    $("#scopeSelect").innerHTML = ['<option value="all">Both boutiques</option>']
-      .concat(STORES.map((s) => `<option value="${s.slug}">${esc(s.name)}</option>`)).join("");
   }
 
   function wirePasswordToggle() {
@@ -1087,7 +1544,13 @@
       const go = event.target.closest("[data-goto]");
       if (go) { setPane(go.dataset.goto); return; }
       const ap = event.target.closest("[data-approve]");
-      if (ap) { approveStaff(ap.dataset.approve); return; }
+      if (ap) {
+        const pick = $('[data-approve-role="' + ap.dataset.approve + '"]');
+        approveStaff(ap.dataset.approve, pick ? pick.value : "counter");
+        return;
+      }
+      const mk = event.target.closest("[data-make-manager]");
+      if (mk) { approveStaff(mk.dataset.makeManager, "manager"); return; }
       const rm = event.target.closest("[data-remove-staff]");
       if (rm) { removeStaff(rm.dataset.removeStaff); return; }
       const rs = event.target.closest("[data-reset-staff]");
@@ -1104,7 +1567,6 @@
       if (per) { ui.period = Number(per.dataset.period); renderStats(); }
     });
 
-    $("#scopeSelect").addEventListener("change", (event) => { ui.scope = event.target.value; renderAll(); });
     $("#orderSearch").addEventListener("input", (event) => { ui.orderQuery = event.target.value; renderOrders(); });
     $("#orderStatus").addEventListener("change", (event) => { ui.status = event.target.value; renderOrders(); });
     $("#prodSearch").addEventListener("input", (event) => { ui.prodQuery = event.target.value; renderProducts(); });
@@ -1140,8 +1602,20 @@
       const toggle = event.target.closest("[data-toggle]");
       if (toggle) { toggleProduct(toggle.dataset.toggle, toggle.dataset.active === "true"); return; }
       const del = event.target.closest("[data-delete]");
-      if (del) deleteProduct(del.dataset.delete);
+      if (del) { deleteProduct(del.dataset.delete); return; }
+      const jump = event.target.closest("[data-stockjump]");
+      if (jump) {
+        const row = PRODUCTS.find((p) => String(p.id) === jump.dataset.stockjump);
+        if (row) {
+          ui.stockQuery = row.name;
+          ui.stockFilter = "all";
+          $("#stockSearch").value = row.name;
+          renderStock();
+          setPane("stock");
+        }
+      }
     });
+    wireTill();
   }
 
   async function boot() {

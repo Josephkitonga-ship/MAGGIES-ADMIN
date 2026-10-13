@@ -7,10 +7,10 @@
    =========================================================== */
 
 :root, [data-theme="light"] {
-  --david:      #2B6B70;   /* David's Boutique: fills (text on it is white) */
-  --david-deep: #1D4A4E;   /* David's desk sidebar                          */
-  --david-soft: #D9EAEB;   /* soft teal field                               */
-  --david-ink:  #2B6B70;   /* David's colour used as text                   */
+  --teal:      #2B6B70;   /* Teal accent: fills (text on it is white) */
+  --teal-deep: #1D4A4E;   /* Teal, dark                          */
+  --teal-soft: #D9EAEB;   /* soft teal field                               */
+  --teal-ink:  #2B6B70;   /* Teal used as text                   */
   --sale:       #B23A2B;   /* discount badge fill (white text)              */
   --sale-ink:   #B23A2B;   /* sale price as text                            */
   --ok:         #2F6B4B;   /* AVAILABLE badge (white text)                  */
@@ -20,10 +20,10 @@
 }
 
 [data-theme="dark"] {
-  --david:      #2B6B70;
-  --david-deep: #173A3D;
-  --david-soft: #21393C;
-  --david-ink:  #86CDD1;
+  --teal:      #2B6B70;
+  --teal-deep: #173A3D;
+  --teal-soft: #21393C;
+  --teal-ink:  #86CDD1;
   --sale:       #B23A2B;
   --sale-ink:   #F19585;
 }
@@ -37,7 +37,6 @@
   color: var(--white); white-space: nowrap;
 }
 .badge--maggies { background: var(--cta); }
-.badge--davids  { background: var(--david); }
 .badge--off     { background: var(--sale); }
 
 .card__media .badge { position: absolute; top: 0.7rem; }
@@ -75,10 +74,8 @@
   font: inherit; font-size: var(--step--1); font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .switch__btn.is-active { background: var(--cta); color: var(--white); border-color: var(--cta); }
-.switch__btn[data-store="davids"].is-active { background: var(--david); border-color: var(--david); }
 .switch__btn[data-offers].is-active { background: var(--sale); border-color: var(--sale); }
 .switch__dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--cta); border: 2px solid var(--white); }
-.switch__btn[data-store="davids"] .switch__dot { background: var(--david); }
 
 /* ---------------- the two boutiques (home page) ---------------- */
 
@@ -91,14 +88,14 @@
   border-radius: var(--radius-m); color: var(--white);
   background: var(--cta);
 }
-.boutique--davids { background: var(--david); }
+.boutique--teal { background: var(--teal); }
 .boutique__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .boutique::after {
   content: ""; position: absolute; inset: 0;
   background: linear-gradient(to top, color-mix(in srgb, var(--plum) 88%, transparent) 0%, transparent 65%);
 }
-.boutique--davids::after {
-  background: linear-gradient(to top, color-mix(in srgb, var(--david-deep) 92%, transparent) 0%, transparent 65%);
+.boutique--teal::after {
+  background: linear-gradient(to top, color-mix(in srgb, var(--teal-deep) 92%, transparent) 0%, transparent 65%);
 }
 .boutique > *:not(.boutique__photo) { position: relative; z-index: 1; }
 .boutique h3 { color: var(--white); font-size: var(--step-2); margin-bottom: 0.2rem; }

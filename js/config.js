@@ -31,8 +31,7 @@ const SHOP = {
   currency: "KSh",
   /* slug is stored on every product and order: never rename it */
   stores: [
-    { slug: "maggies", name: "Maggie's Collection", short: "Maggie's", prefix: "MC" },
-    { slug: "davids",  name: "David's Boutique",    short: "David's",  prefix: "DB" }
+    { slug: "maggies", name: "Maggie's Collection", short: "Maggie's", prefix: "MC" }
   ],
   /* ---- how products are grouped ---------------------------------
      department: who or what it is for (stored on each product)

@@ -5,7 +5,7 @@
    and in node (tests/orders.test.js).
 
      discountPct / saving   marked price vs selling price
-     groupByStore           split a cart into one group per boutique
+     groupByStore           split a cart into one group per store (one, today)
      makeCode               MC-260929-4412 style order codes
      buildMessage           the WhatsApp text (one table, or one per store)
      waPhone                a Kenyan phone number as wa.me digits
@@ -37,13 +37,14 @@
 
   /* lines: [{ store, price, qty, ... }]   stores: SHOP.stores
      Returns [{ store, lines, subtotal }] in store order, only for
-     stores that actually have lines. A line with no store belongs
-     to the first boutique (carts saved before the two-store update). */
+     stores that actually have lines. A line with no store, or with a
+     store that no longer exists, belongs to the first store. */
   function groupByStore(lines, stores) {
     const first = stores[0].slug;
     const buckets = new Map();
+    const known = new Set(stores.map(function (s) { return s.slug; }));
     lines.forEach(function (line) {
-      const slug = line.store || first;
+      const slug = line.store && known.has(line.store) ? line.store : first;
       if (!buckets.has(slug)) buckets.set(slug, []);
       buckets.get(slug).push(line);
     });

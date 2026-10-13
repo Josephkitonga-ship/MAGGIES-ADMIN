@@ -2,17 +2,18 @@
 """
 MAGGIE'S COLLECTION — staff desks (standalone repository)
 
-Generates the sign-in chooser and the three desks:
+Generates the sign-in chooser and the two desks:
 
-    index.html    chooser: which desk are you going to?
-    maggie.html   Maggie's Collection desk
-    david.html    David's Boutique desk
-    owner.html    owner desk, both boutiques, view only
+    index.html     chooser: counter or manager
+    counter.html   the shop dashboard: sell, stock, products, orders
+    manager.html   the owner: everything the counter has, plus reports,
+                   staff approval, voiding sales and deleting products
+    request.html   ask for access
+    maggie.html / david.html / owner.html   small redirects for old bookmarks
 
     python3 build_admin.py
 
-Set SHOP_URL below to the live shop address. When the shop gets its own
-domain, change that one line and rebuild.
+Set SHOP_URL below to the live shop address.
 """
 
 import json
@@ -22,7 +23,7 @@ import time
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # where "Back to the shop" points
-SHOP_URL = "https://josephkitonga-ship.github.io/MAGGIE-S-COLLECTION/"
+SHOP_URL = "https://maggiescollection.co.ke/"
 
 # changes every build, so phones fetch fresh scripts instead of an old cached copy
 VERSION = time.strftime("%Y%m%d%H%M")
@@ -31,7 +32,15 @@ SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
 
 THEME_BOOT = '<script>(function(){try{var t=localStorage.getItem("maggies_theme");if(!t){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>'
 
-DESKS = [{'file': 'maggie.html', 'store': 'maggies', 'title': 'Staff sign in', 'name': "Maggie's Collection", 'kind': 'Store desk', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}, {'file': 'david.html', 'store': 'davids', 'title': 'Staff sign in', 'name': "David's Boutique", 'kind': 'Store desk', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}, {'file': 'owner.html', 'store': 'owner', 'title': 'Staff sign in', 'name': 'Owner desk', 'kind': 'Both boutiques · view only', 'gate_title': 'Staff sign in', 'gate_text': 'Sign in to continue.'}]
+DESKS = [
+    {"file": "counter.html", "store": "counter", "title": "Counter sign in", "name": "Maggie's Collection",
+     "kind": "Counter", "gate_title": "Counter sign in", "gate_text": "Sign in to sell, check stock and verify orders."},
+    {"file": "manager.html", "store": "manager", "title": "Manager sign in", "name": "Maggie's Collection",
+     "kind": "Manager", "gate_title": "Manager sign in", "gate_text": "Sign in for reports, stock, staff and everything the counter does."},
+]
+
+# old bookmarks: file -> where it goes now
+REDIRECTS = {"maggie.html": "counter.html", "david.html": "counter.html", "owner.html": "manager.html"}
 
 ADMIN_SHELL = """<!doctype html>
 <html lang="en">
@@ -50,10 +59,10 @@ ADMIN_SHELL = """<!doctype html>
 <link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
 <link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
 </head>
-<body class="admin" data-store="{{STORE}}">
+<body class="admin" data-desk="{{STORE}}">
 
 <section class="gate" id="gate">
-  <div class="gate__mark gate__mark--{{STORE}}" aria-hidden="true"></div>
+  <div class="gate__mark" aria-hidden="true"></div>
   <h1>{{GATE_TITLE}}</h1>
   <p>{{GATE_TEXT}}</p>
   <form id="gateForm" novalidate>
@@ -109,7 +118,7 @@ REQUEST_PAGE = """<!doctype html>
 <body class="admin">
 <section class="gate">
   <h1>Request access</h1>
-  <p>Enter your email and choose a password. We will email you a link to confirm it. Then the owner approves you.</p>
+  <p>Enter your email and choose a password. We will email you a link to confirm it. Then the manager approves you.</p>
   <form id="requestForm" novalidate>
     <label class="field"><span>Email</span><input id="reqEmail" type="email" autocomplete="username" required></label>
     <label class="field"><span>Choose a password (8 or more characters)</span><input id="reqPassword" type="password" autocomplete="new-password" minlength="8" required></label>
@@ -150,10 +159,6 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
         <h1 id="paneTitle">Overview</h1>
       </div>
       <div class="topbar__tools">
-        <label class="scope" data-owner-only>
-          <span>Showing</span>
-          <select id="scopeSelect"></select>
-        </label>
         <button class="mini" id="refreshAll" type="button">Refresh</button>
         <button class="mini topbar__mobile" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
         <button class="mini topbar__mobile" id="signOutMobile" type="button">Sign out</button>
@@ -165,11 +170,10 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
 
       <section class="pane is-active" id="pane-overview">
         <div class="kpis" id="ovKpis"></div>
-        <div class="storecards" id="ovStores" data-owner-only></div>
         <div class="panel">
           <div class="panel__head">
             <h2>Sales, last 14 days</h2>
-            <p class="hint">A sale counts once you verify the order.</p>
+            <p class="hint">Till sales count at once. Website orders count once verified.</p>
           </div>
           <div id="ovChart"></div>
         </div>
@@ -191,6 +195,56 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
         <div class="panel panel--flush"><div id="productList"></div></div>
       </section>
 
+      <section class="pane" id="pane-sell">
+        <p class="admin-msg" id="sellMsg"></p>
+        <div class="pos">
+          <div class="pos__find">
+            <input class="toolbar__search" id="sellSearch" type="search" placeholder="Search by name or type" aria-label="Search products to sell">
+            <div class="tiles" id="sellTiles"></div>
+          </div>
+          <aside class="cart panel" id="cart">
+            <div class="panel__head"><h2>Sale</h2><button class="mini" type="button" id="cartClear">Clear</button></div>
+            <div id="cartLines"></div>
+            <div class="cart__pay">
+              <span class="cart__label">Paid by</span>
+              <div class="seg" id="payMethods" role="group" aria-label="Payment method"></div>
+              <label class="field" id="tenderField"><span>Cash received (KSh), optional</span><input id="cartTender" type="number" min="0" step="10" inputmode="numeric"></label>
+              <div class="two-col">
+                <label class="field"><span>Customer name, optional</span><input id="cartName" type="text" autocomplete="off"></label>
+                <label class="field"><span>Phone, optional</span><input id="cartPhone" type="tel" autocomplete="off"></label>
+              </div>
+              <label class="field"><span>Note, optional</span><input id="cartNote" type="text" autocomplete="off"></label>
+            </div>
+            <div class="cart__total" id="cartTotal"></div>
+            <p class="admin-msg" id="cartMsg"></p>
+            <button class="btn btn--solid btn--wide" id="cartDone" type="button">Complete sale</button>
+          </aside>
+        </div>
+        <div class="panel" id="receipt" hidden></div>
+      </section>
+
+      <section class="pane" id="pane-stock">
+        <div class="toolbar">
+          <input class="toolbar__search" id="stockSearch" type="search" placeholder="Search products" aria-label="Search stock">
+        </div>
+        <div class="seg" id="stockFilter" role="group" aria-label="Stock filter"></div>
+        <p class="admin-msg" id="stockMsg"></p>
+        <div id="stockList"></div>
+        <div class="panel">
+          <div class="panel__head"><h2>Recent stock movements</h2><p class="hint">Every change, with who made it and why.</p></div>
+          <div id="stockMoves"></div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-sales">
+        <div class="kpis" id="salesKpis"></div>
+        <div class="toolbar">
+          <input class="toolbar__search" id="salesSearch" type="search" placeholder="Search sale code, customer or cashier" aria-label="Search till sales">
+        </div>
+        <p class="admin-msg" id="salesMsg"></p>
+        <div id="salesList"></div>
+      </section>
+
       <section class="pane" id="pane-orders">
         <div class="toolbar">
           <input class="toolbar__search" id="orderSearch" type="search" placeholder="Search code, name or phone" aria-label="Search orders">
@@ -205,11 +259,11 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
         <div class="seg" id="periodSwitch" role="group" aria-label="Period"></div>
         <div class="kpis" id="stKpis"></div>
         <div class="panel">
-          <div class="panel__head"><h2>Sales by day</h2><p class="hint">Verified orders only.</p></div>
+          <div class="panel__head"><h2>Sales by day</h2><p class="hint">Verified website orders and till sales.</p></div>
           <div id="stChart"></div>
         </div>
-        <div class="panel" id="stCompareWrap" data-owner-only>
-          <div class="panel__head"><h2>Maggie's Collection and David's Boutique side by side</h2></div>
+        <div class="panel" id="stCompareWrap">
+          <div class="panel__head"><h2>Website and till side by side</h2></div>
           <div class="table-scroll" id="stCompare"></div>
         </div>
         <div class="two-up">
@@ -223,7 +277,7 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
         <div class="panel">
           <div class="panel__head">
             <h2>Waiting for approval</h2>
-            <p class="hint">People who asked for access. They see nothing until you approve them.</p>
+            <p class="hint">People who asked for access. They see nothing until you approve them. Choose Counter staff or Manager for each person.</p>
           </div>
           <div id="staffPending"></div>
         </div>
@@ -245,10 +299,6 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
   </div>
   <form class="sheet__body" id="productForm" novalidate>
     <p class="admin-msg" id="sheetMsg"></p>
-    <label class="field" id="pStoreField" data-owner-only>
-      <span>Boutique</span>
-      <select id="pStore"></select>
-    </label>
     <label class="field"><span>Name</span><input id="pName" type="text" required></label>
     <div class="two-col">
       <label class="field"><span>Selling price (KSh)</span><input id="pPrice" type="number" min="0" step="10" inputmode="numeric" required></label>
@@ -321,17 +371,26 @@ ADMIN_CHOOSER = """<!doctype html>
 <body class="admin">
 <section class="gate gate--wide">
   <h1>Staff sign in</h1>
-  <p>Choose where you are signing in.</p>
+  <p>Choose how you are signing in.</p>
   <div class="doors">
-    <a class="door door--maggies" href="maggie.html"><b>Maggie's Collection</b></a>
-    <a class="door door--davids" href="david.html"><b>David's Boutique</b></a>
-    <a class="door door--owner" href="owner.html"><b>Owner</b></a>
+    <a class="door door--maggies" href="counter.html"><b>Counter</b><small>Sell, stock, products and orders</small></a>
+    <a class="door door--owner" href="manager.html"><b>Manager</b><small>Reports, staff and everything at the counter</small></a>
   </div>
   <p class="gate__links"><a href="request.html">Request access</a> &middot; <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
   <script src="js/theme.js?v={{VERSION}}"></script>
 </section>
 </body>
 </html>
+"""
+
+
+REDIRECT_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Moved</title>
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="refresh" content="0; url={{TO}}">
+<link rel="canonical" href="{{TO}}"></head>
+<body><p>This page moved. <a href="{{TO}}">Continue</a></p>
+<script>location.replace("{{TO}}");</script></body></html>
 """
 
 
@@ -371,6 +430,8 @@ def main():
     write("js/desk.js", "window.MC_DESK_HTML = " + json.dumps(DESK_HTML.replace("{{SHOP_URL}}", SHOP_URL), ensure_ascii=False) + ";\n")
     for desk in DESKS:
         write(desk["file"], render_desk(desk))
+    for old, new in REDIRECTS.items():
+        write(old, REDIRECT_PAGE.replace("{{TO}}", new))
     print("done")
 
 

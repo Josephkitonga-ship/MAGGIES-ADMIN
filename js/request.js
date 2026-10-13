@@ -1,7 +1,7 @@
 /* ===========================================================
    MAGGIE'S COLLECTION — staff desks — js/request.js
    "Request access": makes a login and emails a confirmation
-   link. The login can see and change NOTHING until the owner
+   link. The login can see and change NOTHING until the manager
    approves it in the Staff tab. Safe to leave open: it only
    creates an empty account.
    =========================================================== */
@@ -49,7 +49,7 @@
     }
     /* same answer whether or not the email already has a login */
     $("#requestForm").reset();
-    note("Almost there. Check your email and tap the confirmation link. Then ask the owner to approve you, and sign in.", true);
+    note("Almost there. Check your email and tap the confirmation link. Then ask the manager to approve you, and sign in.", true);
   }
 
   document.addEventListener("DOMContentLoaded", () => {

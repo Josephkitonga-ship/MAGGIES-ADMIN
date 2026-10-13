@@ -5,8 +5,7 @@
    redefines a colour.
 
    Layout: sidebar + content on a wide screen, content + bottom
-   tab bar on a phone. Each desk sets its own accent:
-     maggies -> plum    davids -> teal    owner -> plum
+   tab bar on a phone. Counter and manager share one look.
    =========================================================== */
 
 body.admin {
@@ -14,11 +13,10 @@ body.admin {
   --accent-ink: var(--plum);
   --desk-bg: var(--foot-bg);
   --desk-text: var(--foot-text);
-  --s1: var(--cta);       /* chart series: Maggie's */
-  --s2: var(--david);     /* chart series: David's  */
+  --s1: var(--cta);       /* chart series: website */
+  --s2: var(--teal);     /* chart series: till (the teal token) */
   margin: 0;
 }
-body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--david-ink); --desk-bg: var(--david-deep); }
 
 [hidden] { display: none !important; }
 
@@ -34,7 +32,6 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
 .gate h1 { font-size: var(--step-2); }
 .gate p { color: var(--ink-soft); font-size: var(--step--1); }
 .gate__mark { width: 2.6rem; height: 0.35rem; border-radius: var(--radius-pill); background: var(--cta); margin-bottom: 1.1rem; }
-.gate__mark--davids { background: var(--david); }
 .gate__links { margin: 1.2rem 0 0; }
 .gate__theme { position: absolute; top: 1rem; right: 1rem; }
 
@@ -46,8 +43,7 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
   background: var(--surface);
 }
 .door b { font-family: var(--display); font-weight: 500; font-size: var(--step-1); color: var(--plum); }
-.door span { font-size: var(--step--1); color: var(--ink-soft); }
-.door--davids { border-left-color: var(--david); }
+.door span, .door small { font-size: var(--step--1); color: var(--ink-soft); }
 .door--owner { border-left-color: var(--rose); }
 .door:hover { border-color: var(--rose); }
 
@@ -76,7 +72,8 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
 .side { display: none; }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(4.4rem, 1fr);
+  overflow-x: auto; scrollbar-width: none;
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -111,7 +108,6 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
   }
   .side__brand { display: flex; align-items: center; gap: 0.7rem; padding: 0 0.5rem; }
   .side__logo { width: 2.3rem; height: 2.3rem; border-radius: 0.7rem; background: var(--foot-accent); flex: 0 0 auto; }
-  body.admin[data-store="davids"] .side__logo { background: var(--david-soft); }
   .side__brand b { display: block; font-family: var(--display); font-weight: 500; font-size: 1.08rem; line-height: 1.15; }
   .side__brand small { display: block; font-size: 0.74rem; opacity: 0.75; }
 
@@ -185,7 +181,6 @@ body.admin[data-store="davids"] { --accent: var(--david); --accent-ink: var(--da
 .mini--danger { color: var(--warn); }
 .mini--on { background: var(--blush); }
 .mini--go { background: var(--cta); border-color: var(--cta); color: var(--white); font-weight: 700; }
-body.admin[data-store="davids"] .mini--go { background: var(--david); border-color: var(--david); }
 .mini--go:hover { background: var(--rose); border-color: var(--rose); color: var(--white); }
 
 .pill {
@@ -247,7 +242,6 @@ body.admin[data-store="davids"] .mini--go { background: var(--david); border-col
 @media (min-width: 760px) { .storecards { grid-template-columns: 1fr 1fr; } }
 .storecard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); overflow: hidden; }
 .storecard__top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.75rem 1rem; color: var(--white); background: var(--cta); }
-.storecard--davids .storecard__top { background: var(--david); }
 .storecard__top b { font-family: var(--display); font-weight: 500; font-size: var(--step-1); color: var(--white); }
 .storecard__top a { color: var(--white); font-size: 0.78rem; text-decoration: underline; }
 .storecard dl { margin: 0; padding: 0.4rem 1rem 0.8rem; }
@@ -266,7 +260,7 @@ body.admin[data-store="davids"] .mini--go { background: var(--david); border-col
 .chart text { fill: var(--ink-soft); font-size: 11px; font-family: var(--body); }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; }
 .chart .bar-1 { fill: var(--accent); }
-body.admin[data-store="owner"] .chart .bar-1 { fill: var(--s1); }
+.chart .bar-1 { fill: var(--s1); }
 .chart .bar-2 { fill: var(--s2); }
 .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.4rem; }
 .legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; margin-right: 0.35rem; vertical-align: -1px; }
@@ -278,7 +272,6 @@ body.admin[data-store="owner"] .chart .bar-1 { fill: var(--s1); }
 .hbar__top span { color: var(--ink-soft); white-space: nowrap; }
 .hbar__track { height: 0.55rem; background: var(--shell); border-radius: var(--radius-pill); overflow: hidden; }
 .hbar__fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); }
-.hbar__fill--davids { background: var(--s2); }
 .hbar__fill--maggies { background: var(--s1); }
 
 .compare { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
@@ -371,3 +364,71 @@ body.admin[data-store="owner"] .chart .bar-1 { fill: var(--s1); }
   .sheet:not([hidden]) { animation: none; }
   .toast { transition: none; }
 }
+
+
+/* ---------------- sell (till) ---------------- */
+
+.pos { display: grid; gap: 1rem; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 980px) { .pos { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } .cart { position: sticky; top: 1rem; } }
+.pos__find .toolbar__search { width: 100%; margin-bottom: 0.8rem; }
+
+.tiles { display: grid; gap: 0.7rem; grid-template-columns: 1fr; }
+@media (min-width: 560px) { .tiles { grid-template-columns: 1fr 1fr; } }
+.tile {
+  display: grid; grid-template-columns: 4.2rem 1fr; gap: 0.75rem; align-items: start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.7rem;
+}
+.tile__img { width: 4.2rem; height: 5.2rem; border-radius: var(--radius-s); object-fit: cover; background: var(--line); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+.chip {
+  appearance: none; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: var(--radius-pill); padding: 0.4rem 0.8rem; min-height: 2.2rem;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.is-out, .chip:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; }
+
+.cart__label { display: block; font-size: var(--step--1); font-weight: 700; margin: 0.8rem 0 0.4rem; }
+.cart__pay { margin-top: 0.4rem; }
+.cartline {
+  display: grid; grid-template-columns: 1fr auto; gap: 0.4rem 0.7rem; align-items: center;
+  padding: 0.7rem 0; border-bottom: 1px solid var(--line);
+}
+.cartline__qty { display: flex; align-items: center; gap: 0.45rem; }
+.cartline__price { display: grid; gap: 0.15rem; font-size: 0.72rem; color: var(--ink-soft); }
+.cartline__price input { width: 6rem; }
+.cartline__sum { text-align: right; }
+.cart__total {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.3rem 1rem;
+  margin: 1rem 0 0.6rem; font-size: var(--step-1);
+}
+.cart__total b { font-family: var(--display); font-size: var(--step-2); }
+.cart__total small { flex-basis: 100%; font-size: var(--step--1); color: var(--ink-soft); }
+.cart__total small.is-good { color: var(--ok); }
+.cart__total small.is-bad { color: var(--sale); }
+.receipt { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.receipt p { margin: 0.2rem 0 0; }
+
+/* ---------------- stock ---------------- */
+
+.stockbox { margin-bottom: 0.8rem; }
+.stockhead { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
+.stockopen { display: grid; gap: 0 0.8rem; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); margin: 0.5rem 0; }
+.stockrow {
+  display: grid; align-items: center; gap: 0.45rem;
+  grid-template-columns: 3.2rem 2.4rem minmax(4.5rem, 6rem) minmax(8rem, 1fr) auto auto auto;
+  padding: 0.5rem 0; border-top: 1px solid var(--line);
+}
+.stockrow__size { font-size: var(--step--1); }
+.stockrow__qty { font-family: var(--display); font-size: var(--step-1); text-align: center; }
+.stockrow__qty.is-low { color: var(--sale); }
+.stockrow__qty.is-zero { color: var(--sale); opacity: 0.7; }
+@media (max-width: 720px) {
+  .stockrow { grid-template-columns: 3rem 2.2rem 1fr 1fr; }
+  .stockrow .mini { width: 100%; }
+}
+.move { display: grid; grid-template-columns: 3rem 1fr; gap: 0.7rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--line); }
+.move:first-child { border-top: 0; }
+.move__delta { font-family: var(--display); font-size: var(--step-1); text-align: center; }
+.move__delta.is-up { color: var(--ok); }
+.move__delta.is-down { color: var(--sale); }
