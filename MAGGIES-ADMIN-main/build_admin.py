@@ -1,0 +1,449 @@
+#!/usr/bin/env python3
+"""
+MAGGIE'S COLLECTION — staff desks (standalone repository)
+
+Generates the sign-in chooser and the two desks:
+
+    index.html     chooser: counter or manager
+    counter.html   the shop dashboard: sell, stock, products, orders
+    manager.html   the owner: everything the counter has, plus reports,
+                   staff approval, voiding sales and deleting products
+    request.html   ask for access
+    maggie.html / david.html / owner.html   small redirects for old bookmarks
+
+    python3 build_admin.py
+
+Set SHOP_URL below to the live shop address.
+"""
+
+import json
+import os
+import time
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# where "Back to the shop" points
+SHOP_URL = "https://maggiescollection.co.ke/"
+
+# changes every build, so phones fetch fresh scripts instead of an old cached copy
+VERSION = time.strftime("%Y%m%d%H%M")
+
+SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+
+THEME_BOOT = '<script>(function(){try{var t=localStorage.getItem("maggies_theme");if(!t){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>'
+
+DESKS = [
+    {"file": "counter.html", "store": "counter", "title": "Counter sign in", "name": "Maggie's Collection",
+     "kind": "Counter", "gate_title": "Counter sign in", "gate_text": "Sign in to sell, check stock and verify orders."},
+    {"file": "manager.html", "store": "manager", "title": "Manager sign in", "name": "Maggie's Collection",
+     "kind": "Manager", "gate_title": "Manager sign in", "gate_text": "Sign in for reports, stock, staff and everything the counter does."},
+]
+
+# old bookmarks: file -> where it goes now
+REDIRECTS = {"maggie.html": "counter.html", "david.html": "counter.html", "owner.html": "manager.html"}
+
+ADMIN_SHELL = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Staff sign in</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
+{{THEME_BOOT}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
+</head>
+<body class="admin" data-desk="{{STORE}}">
+
+<section class="gate" id="gate">
+  <div class="gate__mark" aria-hidden="true"></div>
+  <h1>{{GATE_TITLE}}</h1>
+  <p>{{GATE_TEXT}}</p>
+  <form id="gateForm" novalidate>
+    <label class="field"><span>Email</span><input id="email" type="email" autocomplete="username" required></label>
+    <label class="field">
+      <span>Password</span>
+      <span class="pw-wrap">
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false">Show</button>
+      </span>
+    </label>
+    <p class="gate__forgot"><button type="button" class="linklike" id="forgotBtn">Forgot password?</button></p>
+    <p class="admin-msg" id="gateMsg"></p>
+    <button class="btn btn--solid btn--wide" type="submit">Sign in</button>
+  </form>
+  <form id="resetForm" novalidate hidden>
+    <h2>Choose a new password</h2>
+    <label class="field"><span>New password</span><input id="newPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>Repeat it</span><input id="newPassword2" type="password" autocomplete="new-password" minlength="8" required></label>
+    <p class="admin-msg" id="resetMsg"></p>
+    <button class="btn btn--solid btn--wide" type="submit">Save new password</button>
+  </form>
+  <p class="gate__links"><a href="request.html">Request access</a> · <a href="index.html">Staff sign in</a> · <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+  <button class="icon-btn gate__theme" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
+</section>
+
+
+<script src="{{SUPABASE_CDN}}"></script>
+<script src="js/theme.js?v={{VERSION}}"></script>
+<script src="js/config.js?v={{VERSION}}"></script>
+<script src="js/orders.js?v={{VERSION}}"></script>
+<script src="js/desk.js?v={{VERSION}}"></script>
+<script src="js/admin.js?v={{VERSION}}"></script>
+</body>
+</html>
+"""
+
+REQUEST_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Request access</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
+{{THEME_BOOT}}
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
+</head>
+<body class="admin">
+<section class="gate">
+  <h1>Request access</h1>
+  <p>Enter your email and choose a password. We will email you a link to confirm it. Then the manager approves you.</p>
+  <form id="requestForm" novalidate>
+    <label class="field"><span>Email</span><input id="reqEmail" type="email" autocomplete="username" required></label>
+    <label class="field"><span>Choose a password (8 or more characters)</span><input id="reqPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>Repeat the password</span><input id="reqPassword2" type="password" autocomplete="new-password" minlength="8" required></label>
+    <p class="admin-msg" id="reqMsg"></p>
+    <button class="btn btn--solid btn--wide" type="submit">Request access</button>
+  </form>
+  <p class="gate__links"><a href="index.html">Staff sign in</a> &middot; <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+</section>
+<script src="{{SUPABASE_CDN}}"></script>
+<script src="js/theme.js?v={{VERSION}}"></script>
+<script src="js/config.js?v={{VERSION}}"></script>
+<script src="js/request.js?v={{VERSION}}"></script>
+</body>
+</html>
+"""
+
+DESK_HTML = """<div class="desk" id="desk" hidden>
+
+  <aside class="side">
+    <div class="side__brand">
+      <span class="side__logo" aria-hidden="true"></span>
+      <div><b id="deskName"></b><small id="deskKind"></small></div>
+    </div>
+    <nav class="side__nav" id="sideNav" aria-label="Desk sections"></nav>
+    <div class="side__foot">
+      <span class="side__who" id="who"></span>
+      <button class="side__btn" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
+      <a class="side__btn" href="{{SHOP_URL}}">View the shop</a>
+      <button class="side__btn" id="signOut" type="button">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar__title">
+        <span class="topbar__store" id="topStore"></span>
+        <h1 id="paneTitle">Overview</h1>
+      </div>
+      <div class="topbar__tools">
+        <button class="mini" id="refreshAll" type="button">Refresh</button>
+        <button class="mini topbar__mobile" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">🌙 Dark</button>
+        <button class="mini topbar__mobile" id="signOutMobile" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <p class="admin-msg" id="deskMsg"></p>
+
+      <section class="pane is-active" id="pane-overview">
+        <div class="kpis" id="ovKpis"></div>
+        <div class="panel">
+          <div class="panel__head">
+            <h2>Sales, last 14 days</h2>
+            <p class="hint">Till sales count at once. Website orders count once verified.</p>
+          </div>
+          <div id="ovChart"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head">
+            <h2>Waiting for verification</h2>
+            <button class="mini" type="button" data-goto="orders">See all orders</button>
+          </div>
+          <div id="ovPending"></div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-products">
+        <div class="toolbar">
+          <input class="toolbar__search" id="prodSearch" type="search" placeholder="Search products" aria-label="Search products">
+          <button class="btn btn--solid" id="addProduct" type="button">Add product</button>
+        </div>
+        <p class="admin-msg" id="productMsg"></p>
+        <div class="panel panel--flush"><div id="productList"></div></div>
+      </section>
+
+      <section class="pane" id="pane-sell">
+        <p class="admin-msg" id="sellMsg"></p>
+        <div class="pos">
+          <div class="pos__find">
+            <input class="toolbar__search" id="sellSearch" type="search" placeholder="Search by name or type" aria-label="Search products to sell">
+            <div class="tiles" id="sellTiles"></div>
+          </div>
+          <aside class="cart panel" id="cart">
+            <div class="panel__head"><h2>Sale</h2><button class="mini" type="button" id="cartClear">Clear</button></div>
+            <div id="cartLines"></div>
+            <div class="cart__pay">
+              <span class="cart__label">Paid by</span>
+              <div class="seg" id="payMethods" role="group" aria-label="Payment method"></div>
+              <label class="field" id="tenderField"><span>Cash received (KSh), optional</span><input id="cartTender" type="number" min="0" step="10" inputmode="numeric"></label>
+              <div class="two-col">
+                <label class="field"><span>Customer name, optional</span><input id="cartName" type="text" autocomplete="off"></label>
+                <label class="field"><span>Phone, optional</span><input id="cartPhone" type="tel" autocomplete="off"></label>
+              </div>
+              <label class="field"><span>Note, optional</span><input id="cartNote" type="text" autocomplete="off"></label>
+            </div>
+            <div class="cart__total" id="cartTotal"></div>
+            <p class="admin-msg" id="cartMsg"></p>
+            <button class="btn btn--solid btn--wide" id="cartDone" type="button">Complete sale</button>
+          </aside>
+        </div>
+        <div class="panel" id="receipt" hidden></div>
+      </section>
+
+      <section class="pane" id="pane-stock">
+        <div class="toolbar">
+          <input class="toolbar__search" id="stockSearch" type="search" placeholder="Search products" aria-label="Search stock">
+        </div>
+        <div class="seg" id="stockFilter" role="group" aria-label="Stock filter"></div>
+        <p class="admin-msg" id="stockMsg"></p>
+        <div id="stockList"></div>
+        <div class="panel">
+          <div class="panel__head"><h2>Recent stock movements</h2><p class="hint">Every change, with who made it and why.</p></div>
+          <div id="stockMoves"></div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-sales">
+        <div class="kpis" id="salesKpis"></div>
+        <div class="toolbar">
+          <input class="toolbar__search" id="salesSearch" type="search" placeholder="Search sale code, customer or cashier" aria-label="Search till sales">
+        </div>
+        <p class="admin-msg" id="salesMsg"></p>
+        <div id="salesList"></div>
+      </section>
+
+      <section class="pane" id="pane-orders">
+        <div class="toolbar">
+          <input class="toolbar__search" id="orderSearch" type="search" placeholder="Search code, name or phone" aria-label="Search orders">
+          <select class="mini" id="orderStatus" aria-label="Filter by status"></select>
+        </div>
+        <div class="seg" id="verifSwitch" role="group" aria-label="Verification"></div>
+        <p class="admin-msg" id="orderMsg"></p>
+        <div id="orderList"></div>
+      </section>
+
+      <section class="pane" id="pane-stats">
+        <div class="seg" id="periodSwitch" role="group" aria-label="Period"></div>
+        <div class="kpis" id="stKpis"></div>
+        <div class="panel">
+          <div class="panel__head"><h2>Sales by day</h2><p class="hint">Verified website orders and till sales.</p></div>
+          <div id="stChart"></div>
+        </div>
+        <div class="panel" id="stCompareWrap">
+          <div class="panel__head"><h2>Website and till side by side</h2></div>
+          <div class="table-scroll" id="stCompare"></div>
+        </div>
+        <div class="two-up">
+          <div class="panel"><div class="panel__head"><h2>Best sellers</h2></div><div id="stTop"></div></div>
+          <div class="panel"><div class="panel__head"><h2>Sales by department</h2></div><div id="stCats"></div></div>
+        </div>
+        <div class="panel panel--danger" id="resetPanel">
+          <div class="panel__head">
+            <h2>Start fresh</h2>
+            <p class="hint">Clears every website order, every till sale and the stock movement log, so Sales and Reports start again from zero. Products and photos are kept. This cannot be undone.</p>
+          </div>
+          <label class="check"><input type="checkbox" id="resetStock"> Also forget my stock counts (products go back to “not counted yet”)</label>
+          <label class="field"><span>Type RESET to confirm</span><input id="resetWord" type="text" autocomplete="off" autocapitalize="characters" placeholder="RESET"></label>
+          <p class="admin-msg" id="resetMsg"></p>
+          <button class="btn btn--solid" id="resetGo" type="button" disabled>Clear sales and start fresh</button>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-staff">
+        <p class="admin-msg" id="staffMsg"></p>
+        <div class="panel">
+          <div class="panel__head">
+            <h2>Waiting for approval</h2>
+            <p class="hint">People who asked for access. They see nothing until you approve them. Choose Counter staff or Manager for each person.</p>
+          </div>
+          <div id="staffPending"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head"><h2>Staff</h2></div>
+          <div id="staffActive"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="tabbar" id="tabbar" aria-label="Desk sections"></nav>
+</div>
+
+<aside class="sheet" id="productSheet" aria-label="Product" hidden>
+  <div class="sheet__head">
+    <h2 id="sheetTitle">Add a product</h2>
+    <button class="icon-btn" id="sheetClose" type="button">Close</button>
+  </div>
+  <form class="sheet__body" id="productForm" novalidate>
+    <p class="admin-msg" id="sheetMsg"></p>
+    <label class="field"><span>Name</span><input id="pName" type="text" required></label>
+    <div class="two-col">
+      <label class="field"><span>Selling price (KSh)</span><input id="pPrice" type="number" min="0" step="10" inputmode="numeric" required></label>
+      <label class="field"><span>Marked price (KSh), optional</span><input id="pCompare" type="number" min="0" step="10" inputmode="numeric"></label>
+    </div>
+    <p class="offer-preview" id="pOffer">Add a marked price higher than the selling price to show a discount badge.</p>
+    <div class="two-col">
+      <label class="field"><span>Department</span><select id="pDepartment"></select></label>
+      <label class="field"><span>Type</span><select id="pCategory"></select></label>
+    </div>
+    <label class="field"><span>Sort order, lower shows first</span><input id="pSort" type="number" value="0"></label>
+    <label class="field"><span>One line about it</span><input id="pDescription" type="text"></label>
+    <div class="two-col">
+      <label class="field"><span>Material</span><input id="pMaterial" type="text" placeholder="e.g. Cotton blend"></label>
+      <label class="field"><span>Dimensions</span><input id="pDimensions" type="text" placeholder="e.g. Length 68 cm"></label>
+    </div>
+    <label class="field"><span>Care / fabric details</span><input id="pCare" type="text" placeholder="e.g. Cold hand wash, dry in shade"></label>
+    <label class="field">
+      <span>Badge on the shop</span>
+      <select id="pHighlight">
+        <option value="auto">Automatic (NEW for 14 days, BEST DEAL at 20% off)</option>
+        <option value="new">Always NEW</option>
+        <option value="best_deal">Always BEST DEAL</option>
+        <option value="none">No badge</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Product photo</span>
+      <input id="pImageFile" type="file" accept="image/*">
+    </label>
+    <p class="hint">JPG or PNG, a few MB or less. Leave empty when editing to keep the current photo.</p>
+    <div id="pImagePreviewWrap" hidden><img id="pImagePreview" class="img-preview" alt="Current product photo"></div>
+    <label class="field">
+      <span>More photos for the gallery, optional</span>
+      <input id="pGalleryFiles" type="file" accept="image/*" multiple>
+    </label>
+    <p class="hint" id="pGalleryNote">Pick several at once. They are added to the gallery on the product page.</p>
+    <label class="check" id="pGalleryClearWrap" hidden><input id="pGalleryClear" type="checkbox"><span>Remove the extra photos already saved</span></label>
+    <label class="field">
+      <span>Sizes, separated by commas</span>
+      <input id="pSizes" type="text" placeholder="S, M, L, XL">
+    </label>
+    <p class="hint" id="pSizesHint">Letters (XS&ndash;5XL) for most items.</p>
+    <label class="check"><input id="pActive" type="checkbox" checked><span>Show on the rail</span></label>
+    <div class="sheet__acts">
+      <button class="btn btn--solid" id="saveProduct" type="submit">Add product</button>
+      <button class="btn btn--ghost" id="cancelEdit" type="button">Cancel</button>
+    </div>
+  </form>
+</aside>
+<div class="sheet-scrim" id="sheetScrim" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+"""
+
+ADMIN_CHOOSER = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Staff sign in</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FDF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1216" media="(prefers-color-scheme: dark)">
+{{THEME_BOOT}}
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/stores.css?v={{VERSION}}">
+<link rel="stylesheet" href="css/admin.css?v={{VERSION}}">
+</head>
+<body class="admin">
+<section class="gate gate--wide">
+  <h1>Staff sign in</h1>
+  <p>Choose how you are signing in.</p>
+  <div class="doors">
+    <a class="door door--maggies" href="counter.html"><b>Counter</b><small>Sell, stock, products and orders</small></a>
+    <a class="door door--owner" href="manager.html"><b>Manager</b><small>Reports, staff and everything at the counter</small></a>
+  </div>
+  <p class="gate__links"><a href="request.html">Request access</a> &middot; <a href="{{SHOP_URL}}">&larr; Back to the shop</a></p>
+  <script src="js/theme.js?v={{VERSION}}"></script>
+</section>
+</body>
+</html>
+"""
+
+
+REDIRECT_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Moved</title>
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="refresh" content="0; url={{TO}}">
+<link rel="canonical" href="{{TO}}"></head>
+<body><p>This page moved. <a href="{{TO}}">Continue</a></p>
+<script>location.replace("{{TO}}");</script></body></html>
+"""
+
+
+def render_desk(desk):
+    html = ADMIN_SHELL
+    for key, value in (
+        ("{{THEME_BOOT}}", THEME_BOOT),
+        ("{{DESK_TITLE}}", desk["title"]),
+        ("{{DESK_NAME}}", desk["name"]),
+        ("{{DESK_KIND}}", desk["kind"]),
+        ("{{GATE_TITLE}}", desk["gate_title"]),
+        ("{{GATE_TEXT}}", desk["gate_text"]),
+        ("{{STORE}}", desk["store"]),
+        ("{{SUPABASE_CDN}}", SUPABASE_CDN),
+        ("{{SHOP_URL}}", SHOP_URL),
+        ("{{VERSION}}", VERSION),
+    ):
+        html = html.replace(key, value)
+    return html
+
+
+def write(path, text):
+    full = os.path.join(ROOT, path)
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    print("wrote %-14s %6d bytes" % (path, len(text)))
+
+
+def main():
+    chooser = (ADMIN_CHOOSER.replace("{{THEME_BOOT}}", THEME_BOOT)
+               .replace("{{SHOP_URL}}", SHOP_URL).replace("{{VERSION}}", VERSION))
+    write("index.html", chooser)
+    request = (REQUEST_PAGE.replace("{{THEME_BOOT}}", THEME_BOOT).replace("{{SHOP_URL}}", SHOP_URL)
+               .replace("{{SUPABASE_CDN}}", SUPABASE_CDN).replace("{{VERSION}}", VERSION))
+    write("request.html", request)
+    # the dashboard is not in any page: it is loaded into the page only after a successful sign in
+    write("js/desk.js", "window.MC_DESK_HTML = " + json.dumps(DESK_HTML.replace("{{SHOP_URL}}", SHOP_URL), ensure_ascii=False) + ";\n")
+    for desk in DESKS:
+        write(desk["file"], render_desk(desk))
+    for old, new in REDIRECTS.items():
+        write(old, REDIRECT_PAGE.replace("{{TO}}", new))
+    print("done")
+
+
+if __name__ == "__main__":
+    main()
