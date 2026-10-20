@@ -1400,6 +1400,33 @@
     await stockRpc("void_pos_sale", { p_sale: id, p_reason: reason.trim() }, "Sale voided. Stock put back.");
   }
 
+  /* --- start fresh (manager only) ------------------------------------------------------ */
+
+  function wireReset() {
+    const word = $("#resetWord");
+    const go = $("#resetGo");
+    if (!word || !go) return;
+    word.addEventListener("input", () => { go.disabled = word.value.trim() !== "RESET"; });
+    go.addEventListener("click", async () => {
+      if (word.value.trim() !== "RESET") return;
+      if (!window.confirm("Last check: delete ALL website orders, till sales and the stock log? This cannot be undone.")) return;
+      go.disabled = true;
+      note("#resetMsg", "Clearing…", true);
+      const { error } = await sb.rpc("reset_sales_data", { p_confirm: "RESET", p_clear_stock: $("#resetStock").checked });
+      if (error) {
+        const hint = /function|schema cache/i.test(error.message) ? " Run docs/supabase-start-fresh.sql in Supabase first." : "";
+        note("#resetMsg", error.message + hint, false);
+        go.disabled = word.value.trim() !== "RESET";
+        return;
+      }
+      word.value = "";
+      $("#resetStock").checked = false;
+      note("#resetMsg", "Done. Sales, orders and the stock log are now empty.", true);
+      flash("Started fresh");
+      await loadData();
+    });
+  }
+
   /* --- wiring for Sell, Stock and Till sales ------------------------------------------ */
 
   function wireTill() {
@@ -1616,6 +1643,7 @@
       }
     });
     wireTill();
+    if (IS_MANAGER) wireReset();
   }
 
   async function boot() {

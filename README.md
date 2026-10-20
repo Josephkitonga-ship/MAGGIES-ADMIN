@@ -29,6 +29,7 @@ robots.txt      asks search engines to stay out; pages also carry noindex
 | Delete a product for good | no (hide it) | yes |
 | Void a till sale (puts the pieces back) | no | yes |
 | Reports: website vs till, best sellers, departments, discounts | no | yes |
+| **Start fresh**: clear orders, till sales and the stock log (Reports tab) | no | yes |
 | Staff: approve as counter or manager, make a counter a manager, send password reset, remove counter access | no | yes |
 
 The manager can also open everything the counter has. A manager who signs in on the counter page is taken to `/manager`.
@@ -64,6 +65,7 @@ Run these in the Supabase SQL editor, in this order:
 | **Phase 1**, before deploying this admin | `supabase-counter-manager.sql` (additive: nothing is dropped) |
 | **Phase 3**, right before deploying the Maggie's-only shop | `supabase-merge-stores.sql` |
 | **Phase 4**, once both sites have run fine for a few days | `supabase-single-store-cleanup.sql` |
+| Any time, to enable the **Start fresh** button | `supabase-start-fresh.sql` |
 
 Until Phase 4, existing staff keep their old roles (`store_admin`, `owner`). The desks treat them as
 `counter` and `manager`, so nobody is locked out in between.

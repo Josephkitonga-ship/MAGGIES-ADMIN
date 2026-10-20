@@ -270,6 +270,16 @@ DESK_HTML = """<div class="desk" id="desk" hidden>
           <div class="panel"><div class="panel__head"><h2>Best sellers</h2></div><div id="stTop"></div></div>
           <div class="panel"><div class="panel__head"><h2>Sales by department</h2></div><div id="stCats"></div></div>
         </div>
+        <div class="panel panel--danger" id="resetPanel">
+          <div class="panel__head">
+            <h2>Start fresh</h2>
+            <p class="hint">Clears every website order, every till sale and the stock movement log, so Sales and Reports start again from zero. Products and photos are kept. This cannot be undone.</p>
+          </div>
+          <label class="check"><input type="checkbox" id="resetStock"> Also forget my stock counts (products go back to “not counted yet”)</label>
+          <label class="field"><span>Type RESET to confirm</span><input id="resetWord" type="text" autocomplete="off" autocapitalize="characters" placeholder="RESET"></label>
+          <p class="admin-msg" id="resetMsg"></p>
+          <button class="btn btn--solid" id="resetGo" type="button" disabled>Clear sales and start fresh</button>
+        </div>
       </section>
 
       <section class="pane" id="pane-staff">
